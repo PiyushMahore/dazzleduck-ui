@@ -15,14 +15,24 @@ const SearchTable = ({
     const [expandedRows, setExpandedRows] = useState({});
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-
-    const rowsPerPage = 10;
+    const [rowsPerPage, setRowsPerPage] = useState(10);
 
     const toggleRow = (i) =>
         setExpandedRows((prev) => ({ ...prev, [i]: !prev[i] }));
 
     // Pagination
     const totalPages = Math.ceil(data.length / rowsPerPage);
+
+    const pagesPerGroup = 10;
+    const currentGroup = Math.ceil(currentPage / pagesPerGroup);
+    const startPage = (currentGroup - 1) * pagesPerGroup + 1;
+    const endPage = Math.min(startPage + pagesPerGroup - 1, totalPages);
+
+    const visiblePages = Array.from(
+        { length: endPage - startPage + 1 },
+        (_, i) => startPage + i
+    );
+
     const paginatedData = data.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
@@ -120,11 +130,31 @@ const SearchTable = ({
                             </p>
                         ) : (
                             <>
-                                <h3 className="font-semibold text-gray-700 mb-2 sm:mb-3 text-sm sm:text-base">
-                                    Results ({data.length})
-                                </h3>
+                                <div className="flex justify-between items-center mb-2 sm:mb-3">
+                                    <h3 className="font-semibold text-gray-700 text-sm sm:text-base">
+                                        Results ({data.length})
+                                    </h3>
 
-                                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                    <div className="flex items-center gap-2 text-xs sm:text-sm">
+                                        <span className="text-gray-600">Rows:</span>
+                                        <select
+                                            value={rowsPerPage}
+                                            onChange={(e) => {
+                                                setRowsPerPage(Number(e.target.value));
+                                                setCurrentPage(1);
+                                            }}
+                                            className="border border-gray-300 rounded p-1 text-xs sm:text-sm"
+                                        >
+                                            <option value={5}>5</option>
+                                            <option value={10}>10</option>
+                                            <option value={20}>20</option>
+                                            <option value={50}>50</option>
+                                            <option value={100}>100</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto overflow-y-auto max-h-100 border border-gray-200 rounded-lg scrollbar-custom">
                                     <table className="w-full text-xs sm:text-sm border-collapse">
                                         <thead className="bg-gray-200 sticky top-0 z-10">
                                             <tr>
@@ -157,7 +187,7 @@ const SearchTable = ({
                                                         {Object.values(row).map((val, j) => (
                                                             <td
                                                                 key={j}
-                                                                className="p-1 sm:p-2 border-r text-gray-800 text-xs sm:text-sm break-all max-w-[100px] sm:max-w-none"
+                                                                className="p-1 sm:p-2 border-r text-gray-800 text-xs sm:text-sm break-all max-w-25 sm:max-w-none"
                                                             >
                                                                 {String(formatPossibleDate(val))}
                                                             </td>
@@ -200,10 +230,15 @@ const SearchTable = ({
                                         Prev
                                     </button>
 
-                                    {Array.from(
-                                        { length: totalPages },
-                                        (_, i) => i + 1
-                                    ).map((n) => (
+                                    <button
+                                        onClick={() => setCurrentPage(Math.max(1, startPage - 1))}
+                                        disabled={startPage === 1}
+                                        className="px-2 sm:px-3 py-1 border rounded disabled:opacity-50 text-xs sm:text-sm"
+                                    >
+                                        {"<<"}
+                                    </button>
+
+                                    {visiblePages.map((n) => (
                                         <button
                                             key={n}
                                             onClick={() => setCurrentPage(n)}
@@ -215,6 +250,14 @@ const SearchTable = ({
                                             {n}
                                         </button>
                                     ))}
+
+                                    <button
+                                        onClick={() => setCurrentPage(Math.min(totalPages, endPage + 1))}
+                                        disabled={endPage === totalPages}
+                                        className="px-2 sm:px-3 py-1 border rounded disabled:opacity-50 text-xs sm:text-sm"
+                                    >
+                                        {">>"}
+                                    </button>
 
                                     <button
                                         onClick={() =>

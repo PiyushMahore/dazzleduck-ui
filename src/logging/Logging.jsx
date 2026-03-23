@@ -14,6 +14,7 @@ const Logging = () => {
     const {
         executeQuery,
         login,
+        loginWithJwt,
         logout,
         cancelQuery,
         saveSession,
@@ -42,7 +43,7 @@ const Logging = () => {
     const [showConnection, setShowConnection] = useState(true);
 
     // Connection form management
-    const connectionForm = useConnectionForm(login, logout, connectionInfo);
+    const connectionForm = useConnectionForm(login, loginWithJwt, logout, connectionInfo);
 
     // Query management
     const queryManagement = useQueryManagement(
@@ -88,6 +89,7 @@ const Logging = () => {
                 register={connectionForm.register}
                 handleSubmit={connectionForm.handleSubmit}
                 onSubmit={connectionForm.onSubmit}
+                onSubmitJwt={connectionForm.onSubmitJwt}
                 errors={connectionForm.errors}
                 isSubmitted={connectionForm.isSubmitted}
                 isSubmitting={connectionForm.isSubmitting}
@@ -105,6 +107,10 @@ const Logging = () => {
                 handleImportFromUrl={sessionManagement.handleImportFromUrl}
                 openFileDialog={sessionManagement.openFileDialog}
                 sessionName={sessionManagement.sessionName}
+                jwtMode={connectionForm.jwtMode}
+                setJwtMode={connectionForm.setJwtMode}
+                jwtToken={connectionForm.jwtToken}
+                setJwtToken={connectionForm.setJwtToken}
             />
 
             {/* Tabs */}

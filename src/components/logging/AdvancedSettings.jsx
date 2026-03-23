@@ -10,7 +10,8 @@ const AdvancedSettings = ({
     updateClaim,
     register,
     errors,
-    isSubmitted
+    isSubmitted,
+    jwtMode
 }) => {
     return (
         <div className="">
@@ -29,15 +30,17 @@ const AdvancedSettings = ({
                     }`}
             >
                 <div className="mt-2 space-y-4">
-                    {/* Claims Section */}
-                    <ClaimsManager
-                        claims={claims}
-                        addClaim={addClaim}
-                        removeClaim={removeClaim}
-                        updateClaim={updateClaim}
-                    />
+                    {/* Claims Section - Only shown in Login mode */}
+                    {!jwtMode && (
+                        <ClaimsManager
+                            claims={claims}
+                            addClaim={addClaim}
+                            removeClaim={removeClaim}
+                            updateClaim={updateClaim}
+                        />
+                    )}
 
-                    {/* Split Size */}
+                    {/* Split Size - Always visible */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                             Split Size

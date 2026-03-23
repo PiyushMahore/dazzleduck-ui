@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useForm } from 'react-hook-form';
 
-export const useConnectionForm = (login, logout, connectionInfo) => {
+export const useConnectionForm = (login, loginWithJwt, logout, connectionInfo) => {
     const [claims, setClaims] = useState([{ key: "", value: "" }]);
     const [connection, setConnection] = useState({
         url: "",
@@ -13,6 +13,8 @@ export const useConnectionForm = (login, logout, connectionInfo) => {
     const [isConnected, setIsConnected] = useState(false);
     const [loginError, setLoginError] = useState(null);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [jwtMode, setJwtMode] = useState(false);
+    const [jwtToken, setJwtToken] = useState("");
 
     const {
         register,
@@ -120,6 +122,23 @@ export const useConnectionForm = (login, logout, connectionInfo) => {
         }
     };
 
+    const onSubmitJwt = async (data) => {
+        setLoginError(null);
+
+        if (!jwtToken.trim()) {
+            setLoginError("JWT token is required");
+            return;
+        }
+
+        try {
+            await loginWithJwt(data.url, jwtToken, data.splitSize);
+            setIsConnected(true);
+        } catch (err) {
+            setIsConnected(false);
+            setLoginError(err?.message || "Failed to connect with JWT");
+        }
+    };
+
     const handleLogout = () => {
         logout();
         setIsConnected(false);
@@ -166,8 +185,15 @@ export const useConnectionForm = (login, logout, connectionInfo) => {
         showAdvanced,
         setShowAdvanced,
 
+        // JWT Mode
+        jwtMode,
+        setJwtMode,
+        jwtToken,
+        setJwtToken,
+
         // Actions
         onSubmit,
+        onSubmitJwt,
         handleLogout,
         populateConnectionData,
     };

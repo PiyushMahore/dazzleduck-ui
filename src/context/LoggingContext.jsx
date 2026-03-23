@@ -129,6 +129,49 @@ export const LoggingProvider = ({ children }) => {
         }
     };
 
+    // --- Login with JWT (direct token authentication) ---
+    const loginWithJwt = async (serverUrl, jwt, splitSize, username = "jwt_user") => {
+        try {
+            const trimmedJwt = jwt.trim();
+
+            // Validate JWT format (basic check)
+            if (!trimmedJwt) {
+                throw new Error("JWT token is required");
+            }
+
+            // Optionally, validate the token by making a test query or using a validation endpoint
+            // For now, we'll just store the token and connection info
+
+            // Save JWT in state and cookie
+            setJwtToken(trimmedJwt);
+
+            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            Cookies.set("jwtToken", trimmedJwt, {
+                path: "/",
+                secure: !isLocalhost,
+                sameSite: "lax"
+            });
+
+            // Save connection info (minimal, since we only have URL and JWT)
+            const connInfo = {
+                serverUrl: serverUrl.trim(),
+                username,
+                claims: {},
+                splitSize,
+                loginTime: new Date().toISOString(),
+                jwtMode: true // Flag to indicate this was a JWT login
+            };
+
+            Cookies.set("connectionInfo", JSON.stringify(connInfo), { path: "/" });
+
+            setConnectionInfo(connInfo);
+
+            return trimmedJwt;
+        } catch (err) {
+            throw err;
+        }
+    };
+
     // --- Logout ---
     const logout = useCallback(() => {
         Cookies.remove("jwtToken", { path: "/" });
@@ -459,6 +502,7 @@ export const LoggingProvider = ({ children }) => {
             value={{
                 executeQuery,
                 login,
+                loginWithJwt,
                 logout,
                 cancelQuery,
                 saveSession,
