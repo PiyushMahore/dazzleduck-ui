@@ -1,6 +1,6 @@
 {
   "name": "dazzleduck-arrow-ui",
-  "version": "0.0.21",
+  "version": "1.0.15",
   "description": "Reusable UI components from Arrow JS",
   "main": "dist/arrow-ui.cjs.js",
   "module": "dist/arrow-ui.es.js",
