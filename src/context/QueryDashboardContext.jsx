@@ -139,14 +139,17 @@ export const QueryDashboardProvider = ({ children }) => {
                 throw new Error("JWT token is required");
             }
 
+            // Check if JWT already has "Bearer" prefix, if not add it
+            const formattedJwt = trimmedJwt.startsWith("Bearer ") ? trimmedJwt : `Bearer ${trimmedJwt}`;
+
             // Optionally, validate the token by making a test query or using a validation endpoint
             // For now, we'll just store the token and connection info
 
             // Save JWT in state and cookie
-            setJwtToken(trimmedJwt);
+            setJwtToken(formattedJwt);
 
             const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            Cookies.set("jwtToken", trimmedJwt, {
+            Cookies.set("jwtToken", formattedJwt, {
                 path: "/",
                 secure: !isLocalhost,
                 sameSite: "lax"
@@ -166,7 +169,7 @@ export const QueryDashboardProvider = ({ children }) => {
 
             setConnectionInfo(connInfo);
 
-            return trimmedJwt;
+            return formattedJwt;
         } catch (err) {
             throw err;
         }
