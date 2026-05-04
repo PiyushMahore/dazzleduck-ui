@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { IoIosClose } from "react-icons/io";
 import { IoReload } from "react-icons/io5";
 import DataTable from "./DataTable";
@@ -12,19 +12,215 @@ const StatusMessage = ({ loading, error, empty, emptyText }) => {
     return null;
 };
 
-const TableWrapper = ({ children }) => (
-    <div className="overflow-x-auto border border-gray-200 rounded-lg">
-        <table className="w-full text-xs sm:text-sm border-collapse">{children}</table>
-    </div>
-);
+/**
+ * Performant Table Component with Pagination
+ * Handles large datasets (1000+ rows) efficiently
+ */
+const PerformantTable = ({
+    columns,
+    data,
+    loading,
+    error,
+    emptyText,
+    rowKey,
+    defaultRowsPerPage = 20,
+    title
+}) => {
+    const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(defaultRowsPerPage);
+
+    // Reset to page 1 when data changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [data]);
+
+    // Calculate pagination
+    const totalPages = Math.ceil(data.length / rowsPerPage);
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const paginatedData = data.slice(startIndex, endIndex);
+
+    // Row size options
+    const rowSizeOptions = [10, 20, 50, 100];
+
+    return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-gray-700 px-4 py-3 flex justify-between items-center">
+                {title && <h3 className="text-base font-semibold text-white">{title}</h3>}
+                {data.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-300">
+                            {data.length.toLocaleString()} items
+                        </span>
+                        {totalPages > 1 && (
+                            <span className="text-xs text-gray-400">
+                                • Page {currentPage} of {totalPages}
+                            </span>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Body */}
+            {loading ? (
+                <div className="p-8 text-center text-gray-500 text-sm">Loading...</div>
+            ) : error ? (
+                <div className="p-4 text-center">
+                    <pre className="text-red-600 text-xs whitespace-pre-wrap">{error}</pre>
+                </div>
+            ) : data.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 text-sm">{emptyText}</div>
+            ) : (
+                <>
+                    {/* Controls */}
+                    <div className="flex justify-between items-center px-4 py-2 bg-gray-50 border-b border-gray-200">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs text-gray-600">Rows per page:</label>
+                            <select
+                                value={rowsPerPage}
+                                onChange={(e) => {
+                                    setRowsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}
+                                className="text-xs border border-gray-300 rounded px-2 py-1"
+                            >
+                                {rowSizeOptions.map(size => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-2 py-1 text-xs border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    ‹
+                                </button>
+                                <span className="text-xs text-gray-600 px-2">
+                                    {currentPage} / {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-2 py-1 text-xs border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    ›
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-xs sm:text-sm">
+                            <thead className="bg-gray-100 sticky top-0 z-10">
+                                <tr>
+                                    {columns.map((col, index) => (
+                                        <th
+                                            key={index}
+                                            className={`p-2 text-left text-xs font-semibold border-r border-gray-200 ${col.width || ''}`}
+                                        >
+                                            {col.label}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedData.map((row, rowIndex) => (
+                                    <tr
+                                        key={rowKey ? rowKey(row, startIndex + rowIndex) : startIndex + rowIndex}
+                                        className={rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                                    >
+                                        {columns.map((col, colIndex) => (
+                                            <td
+                                                key={colIndex}
+                                                className={`p-2 border-r border-gray-200 ${col.cellClassName || ''}`}
+                                            >
+                                                {col.render ? col.render(row, startIndex + rowIndex) : row[col.key]}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
 
 // ─── Parameter Dialog ────────────────────────────────────────────────────────
 
 const ParameterDialog = ({ query, onClose, onExecute }) => {
     const [params, setParams] = useState({});
+    const [validationErrors, setValidationErrors] = useState({});
     const paramEntries = Object.entries(query.parameterDescriptions || {});
 
+    // Input validation function - more lenient to allow defaults
+    const validateParameter = (key, value) => {
+        const paramDesc = query.parameterDescriptions?.[key];
+        if (!paramDesc) return null;
+
+        const errors = [];
+
+        // Skip validation for empty values (assume they have defaults)
+        // Only validate if user actually provided a value
+        if (!value || value.trim() === '') {
+            return null; // Allow empty - will use default parameters
+        }
+
+        // Basic validation based on parameter type
+        const desc = typeof paramDesc === 'object' && paramDesc !== null
+            ? (paramDesc.value || paramDesc.description || JSON.stringify(paramDesc))
+            : paramDesc;
+
+        // Basic length validation to prevent excessively long input
+        if (value.length > 10000) {
+            errors.push('Input too long (max 10000 characters)');
+        }
+
+        // Type validation based on description hints (UX improvement, not security)
+        if (typeof desc === 'string') {
+            if (desc.toLowerCase().includes('number') || desc.toLowerCase().includes('integer')) {
+                if (isNaN(Number(value))) {
+                    errors.push('Must be a valid number');
+                }
+            }
+            if (desc.toLowerCase().includes('date')) {
+                if (isNaN(Date.parse(value))) {
+                    errors.push('Must be a valid date');
+                }
+            }
+        }
+
+        return errors.length > 0 ? errors : null;
+    };
+
     const handleExecute = () => {
+        // Validate all parameters before execution
+        const errors = {};
+        let isValid = true;
+
+        paramEntries.forEach(([key]) => {
+            const validationError = validateParameter(key, params[key]);
+            if (validationError) {
+                errors[key] = validationError;
+                isValid = false;
+            }
+        });
+
+        if (!isValid) {
+            setValidationErrors(errors);
+            return;
+        }
+
+        setValidationErrors({});
         onExecute(query.name, params);
         onClose();
     };
@@ -48,6 +244,7 @@ const ParameterDialog = ({ query, onClose, onExecute }) => {
                             const desc = typeof value === "object" && value !== null
                                 ? (value.value || value.description || JSON.stringify(value))
                                 : value;
+                            const hasError = validationErrors[key] && validationErrors[key].length > 0;
                             return (
                                 <div key={key}>
                                     <label className="block text-xs font-medium text-gray-700 mb-0.5">{key}</label>
@@ -55,10 +252,29 @@ const ParameterDialog = ({ query, onClose, onExecute }) => {
                                     <input
                                         type="text"
                                         value={params[key] || ""}
-                                        onChange={(e) => setParams((p) => ({ ...p, [key]: e.target.value }))}
+                                        onChange={(e) => {
+                                            setParams((p) => ({ ...p, [key]: e.target.value }));
+                                            // Clear validation error when user starts typing
+                                            if (validationErrors[key]) {
+                                                setValidationErrors((prev) => {
+                                                    const newErrors = { ...prev };
+                                                    delete newErrors[key];
+                                                    return newErrors;
+                                                });
+                                            }
+                                        }}
                                         placeholder={`Enter ${key}`}
-                                        className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className={`w-full border rounded p-2 text-sm focus:outline-none focus:ring-2 ${
+                                            hasError
+                                                ? 'border-red-500 focus:ring-red-500'
+                                                : 'border-gray-300 focus:ring-green-500'
+                                        }`}
                                     />
+                                    {hasError && (
+                                        <p className="text-xs text-red-600 mt-1">
+                                            {validationErrors[key].join(', ')}
+                                        </p>
+                                    )}
                                 </div>
                             );
                         })}
@@ -88,52 +304,67 @@ const ParameterDialog = ({ query, onClose, onExecute }) => {
 
 // ─── Groups View ─────────────────────────────────────────────────────────────
 
-const GroupsView = ({ groups, loading, error, onSelectGroup, onExecuteAll }) => (
-    <div>
-        <StatusMessage loading={loading} error={error} empty={!groups.length} emptyText="No groups available." />
-        {groups.length > 0 && (
-            <TableWrapper>
-                <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                        <th className="p-2 text-left text-xs font-semibold border-r w-8">#</th>
-                        <th className="p-2 text-left text-xs font-semibold border-r">Group</th>
-                        <th className="p-2 text-left text-xs font-semibold border-r">Queries</th>
-                        <th className="p-2 text-left text-xs font-semibold">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {groups.map((group, i) => (
-                        <tr key={group.query_group} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                            <td className="p-2 border-r text-gray-400 text-xs text-center">{i + 1}</td>
-                            <td className="p-2 border-r font-semibold text-gray-800 text-sm">{group.query_group}</td>
-                            <td className="p-2 border-r">
-                                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">
-                                    {group.ids?.length ?? 0} queries
-                                </span>
-                            </td>
-                            <td className="p-2">
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => onSelectGroup(group.query_group)}
-                                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                                    >
-                                        Open
-                                    </button>
-                                    <button
-                                        onClick={() => onExecuteAll(group.query_group)}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                                    >
-                                        Execute All
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </TableWrapper>
-        )}
-    </div>
-);
+const GroupsView = ({ groups, loading, error, onSelectGroup, onExecuteAll }) => {
+    const columns = [
+        {
+            key: 'index',
+            label: '#',
+            width: 'w-8',
+            render: (_, index) => (
+                <span className="text-gray-400 text-xs text-center block">{index + 1}</span>
+            )
+        },
+        {
+            key: 'query_group',
+            label: 'Group',
+            render: (group) => (
+                <span className="font-semibold text-gray-800 text-sm">{group.query_group}</span>
+            )
+        },
+        {
+            key: 'query_count',
+            label: 'Queries',
+            render: (group) => (
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">
+                    {group.ids?.length ?? 0} queries
+                </span>
+            )
+        },
+        {
+            key: 'actions',
+            label: 'Actions',
+            render: (group) => (
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => onSelectGroup(group.query_group)}
+                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                    >
+                        Open
+                    </button>
+                    <button
+                        onClick={() => onExecuteAll(group.query_group)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                    >
+                        Execute All
+                    </button>
+                </div>
+            )
+        }
+    ];
+
+    return (
+        <PerformantTable
+            columns={columns}
+            data={groups}
+            loading={loading}
+            error={error}
+            emptyText="No groups available."
+            rowKey={(group) => group.query_group}
+            defaultRowsPerPage={10}
+            title="Query Groups"
+        />
+    );
+};
 
 // ─── Queries View ─────────────────────────────────────────────────────────────
 
@@ -152,6 +383,53 @@ const QueriesView = ({ queries, loading, error, onBack, onExecute, filterQuery, 
             );
         })
         : queries;
+
+    const columns = [
+        {
+            key: 'index',
+            label: '#',
+            width: 'w-8',
+            render: (_, index) => (
+                <span className="text-gray-400 text-xs text-center block">{index + 1}</span>
+            )
+        },
+        {
+            key: 'name',
+            label: 'Name',
+            render: (query) => (
+                <span className="font-semibold text-gray-800 text-sm">{query.name}</span>
+            )
+        },
+        {
+            key: 'description',
+            label: 'Description',
+            cellClassName: 'text-gray-600 text-xs max-w-xs',
+            render: (query) => (
+                query.description || <span className="text-gray-300">—</span>
+            )
+        },
+        {
+            key: 'params',
+            label: 'Params',
+            render: (query) => (
+                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">
+                    {Object.keys(query.parameterDescriptions || {}).length} param(s)
+                </span>
+            )
+        },
+        {
+            key: 'action',
+            label: 'Action',
+            render: (query) => (
+                <button
+                    onClick={() => onExecute(query)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                >
+                    Execute
+                </button>
+            )
+        }
+    ];
 
     return (
         <div>
@@ -177,47 +455,21 @@ const QueriesView = ({ queries, loading, error, onBack, onExecute, filterQuery, 
                 </button>
             </div>
 
-            <StatusMessage loading={loading} error={error} empty={!queries.length} emptyText="No queries in this group." />
-            {!loading && !error && queries.length > 0 && filtered.length === 0 && (
-                <p className="text-center py-8 text-gray-400 text-sm">No queries match your search.</p>
+            {filtered.length > 0 && (
+                <PerformantTable
+                    columns={columns}
+                    data={filtered}
+                    loading={loading}
+                    error={error}
+                    emptyText="No queries in this group."
+                    rowKey={(query) => query.name}
+                    defaultRowsPerPage={20}
+                    title={`Queries: ${filtered.length} total`}
+                />
             )}
 
-            {filtered.length > 0 && (
-                <TableWrapper>
-                    <thead className="bg-gray-100 sticky top-0">
-                        <tr>
-                            <th className="p-2 text-left text-xs font-semibold border-r w-8">#</th>
-                            <th className="p-2 text-left text-xs font-semibold border-r">Name</th>
-                            <th className="p-2 text-left text-xs font-semibold border-r">Description</th>
-                            <th className="p-2 text-left text-xs font-semibold border-r">Params</th>
-                            <th className="p-2 text-left text-xs font-semibold">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filtered.map((query, i) => (
-                            <tr key={query.name} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                                <td className="p-2 border-r text-gray-400 text-xs text-center">{i + 1}</td>
-                                <td className="p-2 border-r font-semibold text-gray-800 text-sm">{query.name}</td>
-                                <td className="p-2 border-r text-gray-600 text-xs max-w-xs">
-                                    {query.description || <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="p-2 border-r">
-                                    <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">
-                                        {Object.keys(query.parameterDescriptions || {}).length} param(s)
-                                    </span>
-                                </td>
-                                <td className="p-2">
-                                    <button
-                                        onClick={() => onExecute(query)}
-                                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                                    >
-                                        Execute
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </TableWrapper>
+            {!loading && !error && queries.length > 0 && filtered.length === 0 && (
+                <p className="text-center py-8 text-gray-400 text-sm">No queries match your search.</p>
             )}
         </div>
     );
@@ -235,7 +487,7 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
         selectedGroup, queries, queriesLoading, queriesError, fetchQueries, backToGroups,
         executeQuery, clearResults, executeAllQueriesInGroup,
         resultData, resultLoading, resultError,
-        bulkExecuting, bulkExecutionProgress,
+        bulkExecuting,
     } = namedQuery;
 
     const [dialogQuery, setDialogQuery] = useState(null);
@@ -245,9 +497,32 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     const [showBulkResults, setShowBulkResults] = useState(false);
     const [bulkResultsData, setBulkResultsData] = useState(null);
 
+    // Execution lock to prevent race conditions
+    const isExecutingRef = useRef(false);
+
     // Auto-fetch groups on mount if not yet loaded and connected
     useEffect(() => {
-        if (isConnected && !groupsFetched && !groupsLoading) fetchGroups();
+        let isMounted = true;
+
+        const fetchGroupsIfNeeded = async () => {
+            if (isConnected && !groupsFetched && !groupsLoading && isMounted) {
+                try {
+                    await fetchGroups();
+                } catch (error) {
+                    // Only log error if component is still mounted
+                    if (isMounted) {
+                        console.error('Failed to fetch groups:', error);
+                    }
+                }
+            }
+        };
+
+        fetchGroupsIfNeeded();
+
+        // Cleanup function to prevent memory leaks
+        return () => {
+            isMounted = false;
+        };
     }, [isConnected, groupsFetched, groupsLoading, fetchGroups]);
 
     const handleExecute = async (queryName, params) => {
@@ -260,6 +535,14 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     };
 
     const handleExecuteAllInGroup = async (group) => {
+        // Prevent concurrent executions
+        if (isExecutingRef.current) {
+            showPopup?.('Another bulk execution is already in progress. Please wait.', 'error');
+            return;
+        }
+
+        isExecutingRef.current = true;
+
         try {
             // First fetch the queries for this group
             await fetchQueries(group);
@@ -270,11 +553,22 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
             showPopup?.(`Executed ${result.results.length} queries successfully, ${result.errors.length} failed/skipped`, "success");
         } catch (err) {
             showPopup?.(`Failed: ${err.message}`, "error");
+        } finally {
+            isExecutingRef.current = false;
         }
     };
 
     const handleExecuteAllCurrentQueries = async () => {
         if (!selectedGroup) return;
+
+        // Prevent concurrent executions
+        if (isExecutingRef.current) {
+            showPopup?.('Another bulk execution is already in progress. Please wait.', 'error');
+            return;
+        }
+
+        isExecutingRef.current = true;
+
         try {
             const result = await executeAllQueriesInGroup(selectedGroup, queries);
             setShowBulkResults(true);
@@ -282,6 +576,8 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
             showPopup?.(`Executed ${result.results.length} queries successfully, ${result.errors.length} failed/skipped`, "success");
         } catch (err) {
             showPopup?.(`Failed: ${err.message}`, "error");
+        } finally {
+            isExecutingRef.current = false;
         }
     };
 
@@ -402,31 +698,6 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                         </div>
                     )}
 
-                    {/* Bulk Execution Progress */}
-                    {bulkExecuting && (
-                        <div className="mt-8">
-                            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-md">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                                    Executing Queries&hellip; ({bulkExecutionProgress.current} / {bulkExecutionProgress.total})
-                                </h3>
-                                {/* Progress bar — width driven by a CSS variable so no inline style needed */}
-                                <div className="flex items-center gap-4">
-                                    <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
-                                        <div
-                                            className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-in-out"
-                                            style={{ width: `${bulkExecutionProgress.total > 0 ? Math.round((bulkExecutionProgress.current / bulkExecutionProgress.total) * 100) : 0}%` }}
-                                        />
-                                    </div>
-                                    <span className="text-sm font-medium text-gray-700 whitespace-nowrap tabular-nums">
-                                        {bulkExecutionProgress.total > 0
-                                            ? Math.round((bulkExecutionProgress.current / bulkExecutionProgress.total) * 100)
-                                            : 0}%
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Bulk Execution Results */}
                     {showBulkResults && bulkResultsData && (
                         <div className="mt-15 space-y-6">
@@ -463,10 +734,9 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                             </div>
 
                             {/* ── Per-query DataTables ── */}
-                            {bulkResultsData.results.map((result) => (
-                                <div className="mt-15">
+                            {bulkResultsData.results.map((result, index) => (
+                                <div key={result.queryName || index} className="mt-15">
                                     <DataTable
-                                        key={result.queryName}
                                         title={result.queryName}
                                         data={result.data || []}
                                         emptyText="Query returned no rows."

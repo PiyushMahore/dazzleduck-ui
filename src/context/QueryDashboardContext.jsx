@@ -558,10 +558,6 @@ export const QueryDashboardProvider = ({ children }) => {
         } catch (err) {
             const errorMsg = err.message || "Failed to fetch named query";
 
-            if (err.message.includes("404") || err.message.includes("not found")) {
-                throw new Error(`Named query '${queryName}' not found`);
-            }
-
             throw new Error(errorMsg);
         }
     }, []);
