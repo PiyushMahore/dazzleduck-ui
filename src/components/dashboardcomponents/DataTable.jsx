@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { formatPossibleDate } from "../utils/DateNormalizer";
 import { BiSolidRightArrow } from "react-icons/bi";
-import { HiOutlineX } from "react-icons/hi";
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SAMPLE_ROWS = 30;

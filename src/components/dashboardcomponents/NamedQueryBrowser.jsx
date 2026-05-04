@@ -88,7 +88,7 @@ const ParameterDialog = ({ query, onClose, onExecute }) => {
 
 // ─── Groups View ─────────────────────────────────────────────────────────────
 
-const GroupsView = ({ groups, loading, error, onSelectGroup }) => (
+const GroupsView = ({ groups, loading, error, onSelectGroup, onExecuteAll }) => (
     <div>
         <StatusMessage loading={loading} error={error} empty={!groups.length} emptyText="No groups available." />
         {groups.length > 0 && (
@@ -98,7 +98,7 @@ const GroupsView = ({ groups, loading, error, onSelectGroup }) => (
                         <th className="p-2 text-left text-xs font-semibold border-r w-8">#</th>
                         <th className="p-2 text-left text-xs font-semibold border-r">Group</th>
                         <th className="p-2 text-left text-xs font-semibold border-r">Queries</th>
-                        <th className="p-2 text-left text-xs font-semibold">Action</th>
+                        <th className="p-2 text-left text-xs font-semibold">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -112,12 +112,20 @@ const GroupsView = ({ groups, loading, error, onSelectGroup }) => (
                                 </span>
                             </td>
                             <td className="p-2">
-                                <button
-                                    onClick={() => onSelectGroup(group.query_group)}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
-                                >
-                                    Open
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => onSelectGroup(group.query_group)}
+                                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                                    >
+                                        Open
+                                    </button>
+                                    <button
+                                        onClick={() => onExecuteAll(group.query_group)}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold"
+                                    >
+                                        Execute All
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -129,7 +137,7 @@ const GroupsView = ({ groups, loading, error, onSelectGroup }) => (
 
 // ─── Queries View ─────────────────────────────────────────────────────────────
 
-const QueriesView = ({ queries, loading, error, groupName, onBack, onExecute, filterQuery, queryCount }) => {
+const QueriesView = ({ queries, loading, error, onBack, onExecute, filterQuery, onExecuteAll, isExecutingAll }) => {
     const filtered = filterQuery
         ? queries.filter((q) => {
             const term = filterQuery.toLowerCase();
@@ -157,6 +165,16 @@ const QueriesView = ({ queries, loading, error, groupName, onBack, onExecute, fi
                 <p className="text-sm text-gray-500">
                     {filtered.length} quer{filtered.length === 1 ? "y" : "ies"}
                 </p>
+                <button
+                    onClick={onExecuteAll}
+                    disabled={isExecutingAll}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${isExecutingAll
+                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700 text-white"
+                        }`}
+                >
+                    {isExecutingAll ? "Executing..." : "Execute All Queries"}
+                </button>
             </div>
 
             <StatusMessage loading={loading} error={error} empty={!queries.length} emptyText="No queries in this group." />
@@ -215,12 +233,17 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     const {
         groups, groupsLoading, groupsError, groupsFetched, fetchGroups,
         selectedGroup, queries, queriesLoading, queriesError, fetchQueries, backToGroups,
-        executeQuery, clearResults,
+        executeQuery, clearResults, executeAllQueriesInGroup,
         resultData, resultLoading, resultError,
+        bulkExecuting, bulkExecutionProgress,
     } = namedQuery;
 
     const [dialogQuery, setDialogQuery] = useState(null);
     const [filterQuery, setFilterQuery] = useState("");
+
+    // Bulk execution state
+    const [showBulkResults, setShowBulkResults] = useState(false);
+    const [bulkResultsData, setBulkResultsData] = useState(null);
 
     // Auto-fetch groups on mount if not yet loaded and connected
     useEffect(() => {
@@ -231,6 +254,32 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
         try {
             await executeQuery(queryName, params);
             showPopup?.(`Query "${queryName}" executed successfully`, "success");
+        } catch (err) {
+            showPopup?.(`Failed: ${err.message}`, "error");
+        }
+    };
+
+    const handleExecuteAllInGroup = async (group) => {
+        try {
+            // First fetch the queries for this group
+            await fetchQueries(group);
+            // Then execute all queries
+            const result = await executeAllQueriesInGroup(group, queries);
+            setShowBulkResults(true);
+            setBulkResultsData(result);
+            showPopup?.(`Executed ${result.results.length} queries successfully, ${result.errors.length} failed/skipped`, "success");
+        } catch (err) {
+            showPopup?.(`Failed: ${err.message}`, "error");
+        }
+    };
+
+    const handleExecuteAllCurrentQueries = async () => {
+        if (!selectedGroup) return;
+        try {
+            const result = await executeAllQueriesInGroup(selectedGroup, queries);
+            setShowBulkResults(true);
+            setBulkResultsData(result);
+            showPopup?.(`Executed ${result.results.length} queries successfully, ${result.errors.length} failed/skipped`, "success");
         } catch (err) {
             showPopup?.(`Failed: ${err.message}`, "error");
         }
@@ -261,11 +310,10 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                                 <button
                                     onClick={fetchGroups}
                                     disabled={groupsLoading}
-                                    className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                        groupsLoading
-                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                            : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                    }`}
+                                    className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${groupsLoading
+                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                        : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                        }`}
                                     title="Reload groups"
                                 >
                                     <IoReload className={groupsLoading ? "animate-spin" : ""} size={14} />
@@ -279,11 +327,10 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                                 <button
                                     onClick={() => { fetchQueries(selectedGroup); }}
                                     disabled={queriesLoading}
-                                    className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                        queriesLoading
-                                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                            : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                    }`}
+                                    className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${queriesLoading
+                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                        : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                        }`}
                                     title="Reload queries"
                                 >
                                     <IoReload className={queriesLoading ? "animate-spin" : ""} size={14} />
@@ -321,20 +368,23 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                             loading={groupsLoading}
                             error={groupsError}
                             onSelectGroup={fetchQueries}
+                            onExecuteAll={handleExecuteAllInGroup}
                         />
                     ) : (
                         <QueriesView
                             queries={queries}
                             loading={queriesLoading}
                             error={queriesError}
-                            groupName={selectedGroup}
                             filterQuery={filterQuery}
                             onBack={() => {
                                 backToGroups();
                                 setFilterQuery("");
+                                setShowBulkResults(false);
+                                setBulkResultsData(null);
                             }}
                             onExecute={setDialogQuery}
-                            queryCount={queries.length}
+                            onExecuteAll={handleExecuteAllCurrentQueries}
+                            isExecutingAll={bulkExecuting}
                         />
                     )}
 
@@ -347,8 +397,113 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                                 loading={resultLoading}
                                 error={resultError}
                                 // can also pass buttons in headerActions
-                                onClear={clearResults}                                
+                                onClear={clearResults}
                             />
+                        </div>
+                    )}
+
+                    {/* Bulk Execution Progress */}
+                    {bulkExecuting && (
+                        <div className="mt-8">
+                            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-md">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                                    Executing Queries&hellip; ({bulkExecutionProgress.current} / {bulkExecutionProgress.total})
+                                </h3>
+                                {/* Progress bar — width driven by a CSS variable so no inline style needed */}
+                                <div className="flex items-center gap-4">
+                                    <div className="flex-1 bg-gray-200 rounded-full h-4 overflow-hidden">
+                                        <div
+                                            className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-in-out"
+                                            style={{ width: `${bulkExecutionProgress.total > 0 ? Math.round((bulkExecutionProgress.current / bulkExecutionProgress.total) * 100) : 0}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-700 whitespace-nowrap tabular-nums">
+                                        {bulkExecutionProgress.total > 0
+                                            ? Math.round((bulkExecutionProgress.current / bulkExecutionProgress.total) * 100)
+                                            : 0}%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bulk Execution Results */}
+                    {showBulkResults && bulkResultsData && (
+                        <div className="mt-15 space-y-6">
+
+                            {/* ── Summary header ── */}
+                            <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
+                                <div className="bg-gray-700 px-4 py-3 flex justify-between items-center">
+                                    <h3 className="text-base font-semibold text-white">
+                                        Bulk Execution Results
+                                    </h3>
+                                    <button
+                                        onClick={() => { setShowBulkResults(false); setBulkResultsData(null); }}
+                                        className="px-3 py-1 rounded font-medium text-red-300 border border-red-400/30 bg-red-500/10 hover:bg-red-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 cursor-pointer"
+                                        aria-label="Clear results"
+                                        title="Close results"
+                                    >
+                                        ✕ Clear
+                                    </button>
+                                </div>
+                                <div className="p-4 flex gap-4">
+                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex-1 text-center">
+                                        <p className="text-xs font-semibold text-green-800 mb-1">Successful</p>
+                                        <p className="text-2xl font-bold text-green-700">{bulkResultsData.results.length}</p>
+                                    </div>
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex-1 text-center">
+                                        <p className="text-xs font-semibold text-red-800 mb-1">Failed</p>
+                                        <p className="text-2xl font-bold text-red-700">{bulkResultsData.errors.length}</p>
+                                    </div>
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-1 text-center">
+                                        <p className="text-xs font-semibold text-blue-800 mb-1">Total</p>
+                                        <p className="text-2xl font-bold text-blue-700">{bulkResultsData.total}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ── Per-query DataTables ── */}
+                            {bulkResultsData.results.map((result) => (
+                                <div className="mt-15">
+                                    <DataTable
+                                        key={result.queryName}
+                                        title={result.queryName}
+                                        data={result.data || []}
+                                        emptyText="Query returned no rows."
+                                    />
+                                </div>
+                            ))}
+
+                            {/* ── Failed queries ── */}
+                            {bulkResultsData.errors.length > 0 && (
+                                <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
+                                    <div className="bg-red-700 px-4 py-3">
+                                        <h4 className="text-sm font-semibold text-white">
+                                            Failed Queries ({bulkResultsData.errors.length})
+                                        </h4>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-gray-100">
+                                                <tr>
+                                                    <th className="p-2 text-left font-semibold border-r w-8">#</th>
+                                                    <th className="p-2 text-left font-semibold border-r">Query Name</th>
+                                                    <th className="p-2 text-left font-semibold">Error</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {bulkResultsData.errors.map((err, i) => (
+                                                    <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                                        <td className="p-2 border-r text-gray-400 text-center">{i + 1}</td>
+                                                        <td className="p-2 border-r font-medium text-gray-800">{err.queryName}</td>
+                                                        <td className="p-2 text-red-600 font-mono text-[11px] break-all">{err.error}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </>
