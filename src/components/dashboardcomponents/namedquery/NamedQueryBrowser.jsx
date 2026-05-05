@@ -34,11 +34,19 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     const [displayOverrides, setDisplayOverrides] = useState({});
 
     const isExecutingRef = useRef(false);
+    const autoFetchAttemptedRef = useRef(false);
+
+    useEffect(() => {
+        if (!isConnected) {
+            autoFetchAttemptedRef.current = false;
+        }
+    }, [isConnected]);
 
     // ── Auto-fetch groups once connected ──────────────────────────────────────
     useEffect(() => {
         let alive = true;
-        if (isConnected && !groupsFetched && !groupsLoading) {
+        if (isConnected && !groupsFetched && !groupsLoading && !autoFetchAttemptedRef.current) {
+            autoFetchAttemptedRef.current = true;
             fetchGroups().catch((err) => alive && console.error("Failed to fetch groups:", err));
         }
         return () => { alive = false; };

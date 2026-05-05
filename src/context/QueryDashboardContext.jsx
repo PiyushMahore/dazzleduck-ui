@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useState, useEffect } from "react";
+import React, { createContext, useContext, useCallback, useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { tableFromIPC, compressionRegistry, CompressionType } from "apache-arrow";
 import Cookies from "js-cookie";
@@ -39,6 +39,7 @@ export const QueryDashboardProvider = ({ children }) => {
     // Session state
     const [connectionInfo, setConnectionInfo] = useState(null);
     const [jwtToken, setJwtToken] = useState(() => Cookies.get("jwtToken") || null);
+    const jwtTokenRef = useRef(Cookies.get("jwtToken") || null);
 
     // Load connection info from cookies on mount
     useEffect(() => {
@@ -84,6 +85,18 @@ export const QueryDashboardProvider = ({ children }) => {
         return tableData;
     };
 
+    const persistJwtToken = (token) => {
+        jwtTokenRef.current = token;
+        setJwtToken(token);
+
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        Cookies.set("jwtToken", token, {
+            path: "/",
+            secure: !isLocalhost,
+            sameSite: "lax"
+        });
+    };
+
     // --- Login ---
     const login = async (serverUrl, username, password, splitSize, claims) => {
         try {
@@ -94,16 +107,9 @@ export const QueryDashboardProvider = ({ children }) => {
             });
             const jwt = `${response.data.tokenType} ${response.data.accessToken}`;
 
-            // Save JWT in state (always works) and try cookie as backup
-            setJwtToken(jwt);
-
-            // Also try to save to cookie for persistence across refreshes
-            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            Cookies.set("jwtToken", jwt, {
-                path: "/",
-                secure: !isLocalhost,
-                sameSite: "lax"
-            });
+            // Update both ref and cookie synchronously so immediate follow-up requests
+            // cannot keep using a stale in-memory token from the previous session.
+            persistJwtToken(jwt);
 
             // Save connection info (without password for security in cookies)
             const connInfo = {
@@ -145,15 +151,9 @@ export const QueryDashboardProvider = ({ children }) => {
             // Optionally, validate the token by making a test query or using a validation endpoint
             // For now, we'll just store the token and connection info
 
-            // Save JWT in state and cookie
-            setJwtToken(formattedJwt);
-
-            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            Cookies.set("jwtToken", formattedJwt, {
-                path: "/",
-                secure: !isLocalhost,
-                sameSite: "lax"
-            });
+            // Update both ref and cookie synchronously so immediate follow-up requests
+            // cannot keep using a stale in-memory token from the previous session.
+            persistJwtToken(formattedJwt);
 
             // Save connection info (minimal, since we only have URL and JWT)
             const connInfo = {
@@ -179,6 +179,7 @@ export const QueryDashboardProvider = ({ children }) => {
     const logout = useCallback(() => {
         Cookies.remove("jwtToken", { path: "/" });
         Cookies.remove("connectionInfo", { path: "/" });
+        jwtTokenRef.current = null;
         setJwtToken(null);
         setConnectionInfo(null);
     }, []);
@@ -186,8 +187,8 @@ export const QueryDashboardProvider = ({ children }) => {
 
     // --- Helper: Check jwt and logout ---
     const requireJwtOrLogout = (jwt) => {
-        const cookieToken = Cookies.get("jwtToken");
-        const token = jwtToken || cookieToken || jwt;
+        const cookieToken = Cookies.get("jwtToken") || null;
+        const token = cookieToken || jwtTokenRef.current || jwtToken || jwt;
         if (!token) {
             logout();
             throw new Error("Session expired. Please login again.");

@@ -45,11 +45,12 @@ export const useNamedQueryManagement = ({ url }) => {
         try {
             const data = await apiFetchGroups(url);
             setGroups(data);
+            setGroupsFetched(true);
         } catch (err) {
+            setGroupsFetched(false);
             setGroupsError(err?.message || "Failed to fetch groups");
         } finally {
             setGroupsLoading(false);
-            setGroupsFetched(true);
         }
     }, [url, apiFetchGroups]);
 
