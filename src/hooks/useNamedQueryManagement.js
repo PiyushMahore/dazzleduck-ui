@@ -26,6 +26,7 @@ export const useNamedQueryManagement = ({ url }) => {
 
     // Execution results
     const [resultData, setResultData] = useState(null);
+    const [resultQueryMeta, setResultQueryMeta] = useState(null); // Store query metadata for single query execution
     const [resultLoading, setResultLoading] = useState(false);
     const [resultError, setResultError] = useState("");
 
@@ -79,7 +80,7 @@ export const useNamedQueryManagement = ({ url }) => {
         setResultError("");
     }, []);
 
-    const executeQuery = useCallback(async (queryName, parameters) => {
+    const executeQuery = useCallback(async (queryName, parameters, queryMeta = null) => {
         if (!url) {
             const msg = "No server URL - please connect first";
             setResultError(msg);
@@ -88,6 +89,7 @@ export const useNamedQueryManagement = ({ url }) => {
         setResultLoading(true);
         setResultError("");
         setResultData(null);
+        setResultQueryMeta(queryMeta); // Store query metadata
         try {
             const data = await apiExecuteQuery(url, queryName, parameters);
             setResultData(data);
@@ -107,13 +109,8 @@ export const useNamedQueryManagement = ({ url }) => {
      * @param {string} group - group name; used to fetch queries when no list is pre-loaded
      * @param {Array|null} queriesList - pass the already-fetched list, or null to fetch fresh
      *
-     * Bug fixes vs previous version:
-     *  1. When called from the groups view the caller had no list yet, so it fetched and
-     *     immediately passed the stale React state (still []). We now fetch inside this
-     *     function and use the returned value directly instead of relying on state.
-     *  2. Queries with optional parameters were skipped entirely. Parameters are optional
-     *     by convention — the server accepts {} and uses defaults. We now always attempt
-     *     execution with {} and only record a failure if the API actually rejects it.
+     * Each result now includes `preferredDisplay` (from query.preferred_display) so
+     * the UI can render each result with the correct view (table, line, bar, pie).
      */
     const executeAllQueriesInGroup = useCallback(async (group, queriesList = null) => {
         if (!url) throw new Error("No server URL - please connect first");
@@ -158,6 +155,8 @@ export const useNamedQueryManagement = ({ url }) => {
                     const data = await apiExecuteQuery(url, query.name, {});
                     results.push({
                         queryName: query.name,
+                        // Carry preferred_display so each result renders with the right view
+                        preferredDisplay: query.preferred_display || "table",
                         success: true,
                         data,
                         rowCount: Array.isArray(data) ? data.length : 0,
@@ -183,6 +182,7 @@ export const useNamedQueryManagement = ({ url }) => {
 
     const clearResults = useCallback(() => {
         setResultData(null);
+        setResultQueryMeta(null);
         setResultError("");
     }, []);
 
@@ -195,6 +195,7 @@ export const useNamedQueryManagement = ({ url }) => {
         setQueriesError("");
         setSelectedGroup(null);
         setResultData(null);
+        setResultQueryMeta(null);
         setResultError("");
         setBulkExecutionProgress({ current: 0, total: 0 });
         setBulkExecutionResults([]);
@@ -221,6 +222,7 @@ export const useNamedQueryManagement = ({ url }) => {
         resetAll,
         executeAllQueriesInGroup,
         resultData,
+        resultQueryMeta,
         resultLoading,
         resultError,
         // Bulk execution

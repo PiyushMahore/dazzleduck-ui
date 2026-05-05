@@ -11,7 +11,7 @@ import ConnectionPanel from "../components/dashboardcomponents/ConnectionPanel";
 import QueryRow from "../components/dashboardcomponents/QueryRow";
 import PopupMessage from "../components/utils/PopupMessage";
 import DataTable from "../components/dashboardcomponents/DataTable";
-import NamedQueryBrowser from "../components/dashboardcomponents/NamedQueryBrowser";
+import NamedQueryBrowser from "../components/dashboardcomponents/namedquery/NamedQueryBrowser";
 
 const QueryDashboard = () => {
     const {
