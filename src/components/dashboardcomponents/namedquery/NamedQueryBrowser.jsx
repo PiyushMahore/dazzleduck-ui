@@ -193,6 +193,7 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                 <div className="mt-15">
                     <QueryResultDisplay
                         queryName={resultQueryMeta.name || "Query Results"}
+                        groupName={resultQueryMeta.query_group}
                         data={resultData || []}
                         preferredDisplay={resultQueryMeta.preferred_display || "table"}
                         currentDisplay={displayOverrides[resultQueryMeta.name]}

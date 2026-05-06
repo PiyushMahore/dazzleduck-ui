@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { FiGrid, FiTrendingUp, FiBarChart2, FiPieChart, FiArrowDownRight } from "react-icons/fi";
+import { IoMdArrowDropdown } from "react-icons/io";
 import DataTable from "../DataTable";
 import DisplayCharts from "../../DisplayCharts";
 import PerformantTable from "./PerformantTable";
@@ -6,10 +8,10 @@ import PerformantTable from "./PerformantTable";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DISPLAY_OPTIONS = [
-    { value: "table", label: "Table", icon: "📊" },
-    { value: "line", label: "Line Chart", icon: "📈" },
-    { value: "bar", label: "Bar Chart", icon: "📊" },
-    { value: "pie", label: "Pie Chart", icon: "🥧" },
+    { value: "table", label: "Table View", icon: <FiGrid size={16} /> },
+    { value: "line", label: "Line Chart", icon: <FiTrendingUp size={16} /> },
+    { value: "bar", label: "Bar Chart", icon: <FiBarChart2 size={16} /> },
+    { value: "pie", label: "Pie Chart", icon: <FiPieChart size={16} /> },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,21 +39,46 @@ const validateParam = (key, value, paramDesc) => {
 
 // ─── DisplayTypeSelect ────────────────────────────────────────────────────────
 
-/** Reusable display-type <select> used in QueryResultDisplay. */
-const DisplayTypeSelect = ({ value, onChange }) => (
-    <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-300">Display:</span>
-        <select
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-xs border border-gray-500 rounded px-2 py-1 bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-            {DISPLAY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.icon} {opt.label}</option>
-            ))}
-        </select>
-    </div>
-);
+const DisplayTypeSelect = ({ value, onChange }) => {
+    const selectedOption =
+        DISPLAY_OPTIONS.find(opt => opt.value === value) || DISPLAY_OPTIONS[0];
+
+    return (
+        <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-300">Display:</span>
+
+            <div className="relative">
+                {/* Left icon */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none">
+                    {selectedOption.icon}
+                </div>
+
+                {/* Native select */}
+                <select
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="appearance-none  bg-gray-800  hover:bg-gray-700  text-white text-xs border  border-gray-500 rounded pl-8 pr-7 py-1 cursor-pointer focus:outline-none focus:ring-2  focus:ring-blue-500 transition-colors
+                    "
+                >
+                    {DISPLAY_OPTIONS.map((opt) => (
+                        <option
+                            key={opt.value}
+                            value={opt.value}
+                            className="bg-gray-800 text-white"
+                        >
+                            {opt.label}
+                        </option>
+                    ))}
+                </select>
+
+                {/* Custom arrow */}
+                <div className="absolute right-2 top-3.5 -translate-y-1/2 text-md text-gray-300 pointer-events-none">
+                    <IoMdArrowDropdown />
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // ─── ParameterDialog ─────────────────────────────────────────────────────────
 
@@ -302,7 +329,7 @@ export const QueriesView = ({ queries, loading, error, filterQuery, onBack, onEx
  *
  * Supports: table | line | bar | pie
  */
-export const QueryResultDisplay = ({ queryName, data, preferredDisplay = "table", currentDisplay, onDisplayChange }) => {
+export const QueryResultDisplay = ({ queryName, groupName, data, preferredDisplay = "table", currentDisplay, onDisplayChange }) => {
     const displayType = (currentDisplay || preferredDisplay).toLowerCase();
     const isChart = ["line", "bar", "pie"].includes(displayType);
 
@@ -310,6 +337,7 @@ export const QueryResultDisplay = ({ queryName, data, preferredDisplay = "table"
         return (
             <DataTable
                 title={queryName}
+                subtitle={groupName}
                 data={data || []}
                 emptyText="Query returned no rows."
                 headerActions={onDisplayChange && (
@@ -322,7 +350,14 @@ export const QueryResultDisplay = ({ queryName, data, preferredDisplay = "table"
     return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
             <div className="bg-gray-700 px-4 py-3 flex justify-between items-center">
-                <h3 className="text-base font-semibold text-white">{queryName}</h3>
+                <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold text-white">{queryName}</h3>
+                    {groupName && (
+                        <span className="text-xs text-slate-400 font-normal">
+                            ({groupName})
+                        </span>
+                    )}
+                </div>
                 {onDisplayChange && <DisplayTypeSelect value={displayType} onChange={onDisplayChange} />}
             </div>
             <div className="p-4">
@@ -371,6 +406,7 @@ export const BulkResultsSummary = ({ bulkResultsData, displayOverrides, onDispla
                 <div key={result.queryName || i} className="mt-15">
                     <QueryResultDisplay
                         queryName={result.queryName}
+                        groupName={result.query_group}
                         data={result.data || []}
                         preferredDisplay={result.preferredDisplay || "table"}
                         currentDisplay={displayOverrides[result.queryName]}

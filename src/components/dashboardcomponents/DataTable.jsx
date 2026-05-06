@@ -127,6 +127,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
  *
  * Props:
  *   title         – string shown in the card header
+ *   subtitle      – optional string shown beside the title in small brackets
  *   data          – array of row objects
  *   loading       – boolean
  *   error         – error string
@@ -139,6 +140,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
  */
 const DataTable = ({
     title = "Results",
+    subtitle = "",
     data = [],
     loading = false,
     error = "",
@@ -186,7 +188,14 @@ const DataTable = ({
 
             {/* ── Card Header ── */}
             <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-700">
-                <span className="text-base font-bold text-slate-100 tracking-tight">{title}</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-slate-100 tracking-tight">{title}</span>
+                    {subtitle && (
+                        <span className="text-xs text-slate-400 font-normal">
+                            ({subtitle})
+                        </span>
+                    )}
+                </div>
                 <div className="flex items-center gap-2">
                     {headerActions}
                     {onClear && (

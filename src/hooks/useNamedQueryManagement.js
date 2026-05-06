@@ -81,12 +81,9 @@ export const useNamedQueryManagement = ({ url }) => {
     }, [url, apiFetchQueries]);
 
     const fetchGroups = useCallback(async () => {
-        // Groups are now derived from all queries
-        if (allQueries.length > 0 && allQueriesFetched) {
-            return; // Already have groups
-        }
+        // Always force reload - bypass early return condition
         await fetchAllNamedQueries();
-    }, [allQueries.length, allQueriesFetched, fetchAllNamedQueries]);
+    }, [fetchAllNamedQueries]);
 
     const fetchQueries = useCallback(async (group) => {
         if (!url) {
@@ -185,6 +182,7 @@ export const useNamedQueryManagement = ({ url }) => {
                     const data = await apiExecuteQuery(url, query.name, {});
                     results.push({
                         queryName: query.name,
+                        query_group: query.query_group,
                         // Carry preferred_display so each result renders with the right view
                         preferredDisplay: query.preferred_display || "table",
                         success: true,
