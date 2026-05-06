@@ -478,8 +478,9 @@ export const QueryDashboardProvider = ({ children }) => {
     };
 
     /**
-     * Fetch all named queries with pagination and optional group filter
-     * GET /v1/named-query?offset={offset}&limit={limit}&group={group}
+     * Fetch all named queries with pagination
+     * GET /v1/named-query?offset={offset}&limit={limit}
+     * Note: Group filtering is now done client-side
      */
     const fetchNamedQueries = useCallback(async (serverUrl, offset = 0, limit = 20, group = null) => {
         if (!serverUrl?.trim()) {
@@ -488,47 +489,32 @@ export const QueryDashboardProvider = ({ children }) => {
 
         const cleanUrl = serverUrl.trim();
         const endpoint = `/v1/named-query`;
-        let queryParams = `?offset=${offset}&limit=${Math.min(limit, 200)}`;
+        const queryParams = `?offset=${offset}&limit=${Math.min(limit, 1000)}`;
 
-        if (group) {
-            queryParams += `&group=${encodeURIComponent(group)}`;
-        }
+        // Note: group parameter is kept for backward compatibility but no longer used
+        // Groups are now derived from query_group field in the response
 
         try {
             const result = await forwardNamedQueryRequest(cleanUrl, 'GET', endpoint + queryParams);
 
             if (result.type === "json" && Array.isArray(result.data)) {
-                return result.data;
+                // Transform parameterDescriptions from array format to object format for backward compatibility
+                const transformedData = result.data.map(query => {
+                    if (Array.isArray(query.parameterDescriptions)) {
+                        const paramObj = {};
+                        query.parameterDescriptions.forEach(param => {
+                            paramObj[param.key] = param.value;
+                        });
+                        return { ...query, parameterDescriptions: paramObj };
+                    }
+                    return query;
+                });
+                return transformedData;
             }
 
             return [];
         } catch (err) {
             throw new Error(`Failed to fetch named queries: ${err.message}`);
-        }
-    }, []);
-
-    /**
-     * Fetch all named query groups
-     * GET /v1/named-query/groups
-     */
-    const fetchNamedQueryGroups = useCallback(async (serverUrl) => {
-        if (!serverUrl?.trim()) {
-            throw new Error("Server URL is required");
-        }
-
-        const cleanUrl = serverUrl.trim();
-        const endpoint = `/v1/named-query/groups`;
-
-        try {
-            const result = await forwardNamedQueryRequest(cleanUrl, 'GET', endpoint);
-
-            if (result.type === "json" && Array.isArray(result.data)) {
-                return result.data;
-            }
-
-            return [];
-        } catch (err) {
-            throw new Error(`Failed to fetch named query groups: ${err.message}`);
         }
     }, []);
 
@@ -550,9 +536,18 @@ export const QueryDashboardProvider = ({ children }) => {
 
         try {
             const result = await forwardNamedQueryRequest(cleanUrl, 'GET', endpoint);
-            
+
             if (result.type === "json") {
-                return result.data;
+                // Transform parameterDescriptions from array format to object format
+                let queryData = result.data;
+                if (Array.isArray(queryData.parameterDescriptions)) {
+                    const paramObj = {};
+                    queryData.parameterDescriptions.forEach(param => {
+                        paramObj[param.key] = param.value;
+                    });
+                    queryData = { ...queryData, parameterDescriptions: paramObj };
+                }
+                return queryData;
             }
 
             throw new Error("Invalid response format");
@@ -760,7 +755,6 @@ export const QueryDashboardProvider = ({ children }) => {
                 loadSessionFromUrl,
                 restoreSession,
                 fetchNamedQueries,
-                fetchNamedQueryGroups,
                 getNamedQuery,
                 executeNamedQuery,
                 connectionInfo,

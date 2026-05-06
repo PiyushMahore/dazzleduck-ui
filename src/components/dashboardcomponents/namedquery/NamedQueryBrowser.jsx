@@ -20,7 +20,7 @@ import {
  */
 const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     const {
-        groups, groupsLoading, groupsError, groupsFetched, fetchGroups,
+        groups, groupsLoading, groupsError, fetchGroups,
         selectedGroup, queries, queriesLoading, queriesError, fetchQueries, backToGroups,
         executeQuery, clearResults, executeAllQueriesInGroup,
         resultData, resultQueryMeta, resultLoading, resultError,
@@ -34,23 +34,15 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
     const [displayOverrides, setDisplayOverrides] = useState({});
 
     const isExecutingRef = useRef(false);
-    const autoFetchAttemptedRef = useRef(false);
-
-    useEffect(() => {
-        if (!isConnected) {
-            autoFetchAttemptedRef.current = false;
-        }
-    }, [isConnected]);
 
     // ── Auto-fetch groups once connected ──────────────────────────────────────
     useEffect(() => {
         let alive = true;
-        if (isConnected && !groupsFetched && !groupsLoading && !autoFetchAttemptedRef.current) {
-            autoFetchAttemptedRef.current = true;
+        if (isConnected && !groupsLoading && groups.length === 0) {
             fetchGroups().catch((err) => alive && console.error("Failed to fetch groups:", err));
         }
         return () => { alive = false; };
-    }, [isConnected, groupsFetched, groupsLoading, fetchGroups]);
+    }, [isConnected, groupsLoading, groups.length, fetchGroups]);
 
     // ── Display override helpers ──────────────────────────────────────────────
     const handleDisplayChange = (queryName, type) =>
@@ -92,10 +84,12 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
         }
     };
 
-    // Called from GroupsView — group may not be loaded yet, pass null list
+    // Called from GroupsView — filter queries locally and pass them directly
     const handleExecuteAllInGroup = async (group) => {
-        await fetchQueries(group);
-        await handleBulkExecute(group, queries);
+        const filteredQueries = namedQuery.allQueries.filter(q =>
+            (q.query_group || 'uncategorized') === group
+        );
+        await handleBulkExecute(group, filteredQueries);
     };
 
     // Called from QueriesView — queries already loaded in state

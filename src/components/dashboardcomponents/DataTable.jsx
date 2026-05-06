@@ -41,7 +41,7 @@ const inferMinWidth = (key, sampleValues) => {
 
 // Map inferred min-width px values → Tailwind classes (avoids inline style)
 const MIN_WIDTH_CLASS = {
-    null: "min-w-[50px] max-w-auto",
+    null: "min-w-[50px]",
     90: "min-w-[90px]",
     120: "min-w-[120px]",
     140: "min-w-[140px]",
@@ -71,11 +71,6 @@ const ExpandedJsonRow = ({ row, colSpan }) => {
     const jsonStr = JSON.stringify(row, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2);
     return (
         <tr className="bg-slate-950">
-            {/*
-        max-w-0 + w-full: the td does NOT contribute to table column widths,
-        so a wide <pre> inside cannot stretch the table layout.
-        The overflow-hidden on the td clips anything that would escape.
-      */}
             <td colSpan={colSpan} className="p-0 max-w-0 w-full overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 border-y border-slate-700">
                     <span className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -84,11 +79,6 @@ const ExpandedJsonRow = ({ row, colSpan }) => {
                     <div className="flex-1 h-px bg-slate-700" />
                     <span className="text-[10px] text-slate-500">{jsonStr.length} chars</span>
                 </div>
-                {/*
-          whitespace-pre-wrap: preserves JSON indentation but wraps long lines.
-          break-all: breaks within tokens (URLs, SQL, long strings) so nothing overflows.
-          overflow-x-auto kept as safety net for genuinely unbreakable tokens.
-        */}
                 <pre
                     className="m-0 px-5 py-3.5 font-mono text-xs leading-relaxed text-slate-200 bg-slate-950 overflow-x-auto overflow-y-hidden whitespace-pre-wrap break-all"
                     dangerouslySetInnerHTML={{ __html: highlightJson(jsonStr) }}
@@ -297,7 +287,7 @@ const DataTable = ({
                                     <thead className="sticky top-0 z-10">
                                         <tr className="bg-slate-800 border-b-2 border-slate-700">
                                             <th
-                                                className="w-12 px-2 py-2.5 text-center border-r border-slate-200 text-slate-400 font-bold text-[11px] bg-slate-800 whitespace-nowrap select-none"
+                                                className="max-w-10 min-w-8 px-2 py-2.5 text-center border-r border-slate-200 text-slate-400 font-bold text-[11px] bg-slate-800 whitespace-nowrap select-none"
                                                 title="Click row number to view raw JSON"
                                                 scope="col"
                                                 aria-label="Row actions"
@@ -329,7 +319,7 @@ const DataTable = ({
                                                     >
                                                         {/* # cell */}
                                                         <td
-                                                            className="min-w-12 border-r border-slate-300 text-center align-middle px-1 py-0 select-none cursor-pointer"
+                                                            className="border-r border-slate-300 text-center align-middle px-1 py-0 select-none cursor-pointer"
                                                             aria-label={`View JSON for row ${absoluteIndex}`}
                                                         >
                                                             <div className="flex flex-col items-center gap-0.5 py-1.5">

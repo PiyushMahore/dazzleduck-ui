@@ -76,11 +76,27 @@ describe("Named Query Tab", () => {
     it("auto-fetches and renders named query groups after connect", async () => {
         axios.post.mockResolvedValueOnce(loginResponse("token-groups"));
         axios.mockImplementation(async (config) => {
-            if (isMethod(config, "get") && config.url === `${SERVER_URL}/v1/named-query/groups`) {
+            if (isMethod(config, "get") && config.url === `${SERVER_URL}/v1/named-query?offset=0&limit=1000`) {
                 return {
                     data: [
-                        { query_group: "sales", ids: [1, 2] },
-                        { query_group: "finance", ids: [3] },
+                        {
+                            id: 1,
+                            name: "sales_summary",
+                            description: "Summary for the selected period",
+                            parameterDescriptions: [
+                                { key: "limit", value: "number" }
+                            ],
+                            preferred_display: "table",
+                            query_group: "sales"
+                        },
+                        {
+                            id: 2,
+                            name: "finance_report",
+                            description: "Financial report",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "finance"
+                        },
                     ],
                     headers: { "content-type": "application/json" },
                 };
@@ -97,7 +113,7 @@ describe("Named Query Tab", () => {
 
         expect(axios).toHaveBeenCalledWith(expect.objectContaining({
             method: "GET",
-            url: `${SERVER_URL}/v1/named-query/groups`,
+            url: `${SERVER_URL}/v1/named-query?offset=0&limit=1000`,
             headers: expect.objectContaining({
                 Authorization: "Bearer token-groups",
             }),
@@ -107,20 +123,18 @@ describe("Named Query Tab", () => {
     it("opens a group and renders its named queries", async () => {
         axios.post.mockResolvedValueOnce(loginResponse("token-open-group"));
         axios.mockImplementation(async (config) => {
-            if (isMethod(config, "get") && config.url === `${SERVER_URL}/v1/named-query/groups`) {
-                return {
-                    data: [{ query_group: "sales", ids: [1] }],
-                    headers: { "content-type": "application/json" },
-                };
-            }
-
-            if (isMethod(config, "get") && config.url === `${SERVER_URL}/v1/named-query?offset=0&limit=200&group=sales`) {
+            if (isMethod(config, "get") && config.url === `${SERVER_URL}/v1/named-query?offset=0&limit=1000`) {
                 return {
                     data: [
                         {
+                            id: 1,
                             name: "sales_summary",
                             description: "Summary for the selected period",
-                            parameterDescriptions: { limit: "number" },
+                            parameterDescriptions: [
+                                { key: "limit", value: "number" }
+                            ],
+                            preferred_display: "table",
+                            query_group: "sales"
                         },
                     ],
                     headers: { "content-type": "application/json" },

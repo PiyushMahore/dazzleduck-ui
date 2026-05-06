@@ -4,21 +4,26 @@ import { useQueryDashboard } from "../context/QueryDashboardContext";
 /**
  * Hook for managing named queries: groups → queries → execute
  * All API logic delegated to QueryDashboardContext.
+ * Updated to work with new backend API: fetch all queries and group locally.
  */
 export const useNamedQueryManagement = ({ url }) => {
     const {
         fetchNamedQueries: apiFetchQueries,
-        fetchNamedQueryGroups: apiFetchGroups,
         executeNamedQuery: apiExecuteQuery,
     } = useQueryDashboard();
 
-    // Groups
+    // All named queries fetched from backend
+    const [allQueries, setAllQueries] = useState([]);
+    const [allQueriesLoading, setAllQueriesLoading] = useState(false);
+    const [allQueriesError, setAllQueriesError] = useState("");
+    const [allQueriesFetched, setAllQueriesFetched] = useState(false);
+
+    // Groups (derived from all queries)
     const [groups, setGroups] = useState([]);
     const [groupsLoading, setGroupsLoading] = useState(false);
     const [groupsError, setGroupsError] = useState("");
-    const [groupsFetched, setGroupsFetched] = useState(false);
 
-    // Queries within a selected group
+    // Queries within a selected group (filtered from all queries)
     const [queries, setQueries] = useState([]);
     const [queriesLoading, setQueriesLoading] = useState(false);
     const [queriesError, setQueriesError] = useState("");
@@ -35,24 +40,53 @@ export const useNamedQueryManagement = ({ url }) => {
     const [bulkExecutionResults, setBulkExecutionResults] = useState([]);
     const [bulkExecuting, setBulkExecuting] = useState(false);
 
-    const fetchGroups = useCallback(async () => {
+    /**
+     * Fetch all named queries and derive groups from query_group field
+     */
+    const fetchAllNamedQueries = useCallback(async () => {
         if (!url) {
-            setGroupsError("No server URL - please connect first");
+            setAllQueriesError("No server URL - please connect first");
             return;
         }
-        setGroupsLoading(true);
-        setGroupsError("");
+        setAllQueriesLoading(true);
+        setAllQueriesError("");
         try {
-            const data = await apiFetchGroups(url);
-            setGroups(data);
-            setGroupsFetched(true);
+            // Fetch all named queries without group filter
+            const data = await apiFetchQueries(url, 0, 1000, null);
+            setAllQueries(data);
+            setAllQueriesFetched(true);
+
+            // Derive groups from query_group field
+            const groupMap = new Map();
+            data.forEach(query => {
+                const groupName = query.query_group || 'uncategorized';
+                if (!groupMap.has(groupName)) {
+                    groupMap.set(groupName, {
+                        query_group: groupName,
+                        ids: []
+                    });
+                }
+                groupMap.get(groupName).ids.push(query.id);
+            });
+
+            setGroups(Array.from(groupMap.values()));
+            setGroupsError("");
         } catch (err) {
-            setGroupsFetched(false);
-            setGroupsError(err?.message || "Failed to fetch groups");
+            setAllQueriesFetched(false);
+            setAllQueriesError(err?.message || "Failed to fetch named queries");
+            setGroupsError(err?.message || "Failed to fetch named queries");
         } finally {
-            setGroupsLoading(false);
+            setAllQueriesLoading(false);
         }
-    }, [url, apiFetchGroups]);
+    }, [url, apiFetchQueries]);
+
+    const fetchGroups = useCallback(async () => {
+        // Groups are now derived from all queries
+        if (allQueries.length > 0 && allQueriesFetched) {
+            return; // Already have groups
+        }
+        await fetchAllNamedQueries();
+    }, [allQueries.length, allQueriesFetched, fetchAllNamedQueries]);
 
     const fetchQueries = useCallback(async (group) => {
         if (!url) {
@@ -62,16 +96,19 @@ export const useNamedQueryManagement = ({ url }) => {
         setSelectedGroup(group);
         setQueriesLoading(true);
         setQueriesError("");
-        setQueries([]);
         try {
-            const data = await apiFetchQueries(url, 0, 200, group);
-            setQueries(data);
+            // Filter queries locally by group
+            const filteredQueries = allQueries.filter(q =>
+                (q.query_group || 'uncategorized') === group
+            );
+            setQueries(filteredQueries);
+            setQueriesError("");
         } catch (err) {
-            setQueriesError(err?.message || "Failed to fetch queries");
+            setQueriesError(err?.message || "Failed to filter queries");
         } finally {
             setQueriesLoading(false);
         }
-    }, [url, apiFetchQueries]);
+    }, [url, allQueries]);
 
     const backToGroups = useCallback(() => {
         setSelectedGroup(null);
@@ -107,8 +144,8 @@ export const useNamedQueryManagement = ({ url }) => {
     /**
      * Execute all queries in a group.
      *
-     * @param {string} group - group name; used to fetch queries when no list is pre-loaded
-     * @param {Array|null} queriesList - pass the already-fetched list, or null to fetch fresh
+     * @param {string} group - group name; used to filter queries from all queries
+     * @param {Array|null} queriesList - pass the already-fetched list, or null to filter from all queries
      *
      * Each result now includes `preferredDisplay` (from query.preferred_display) so
      * the UI can render each result with the correct view (table, line, bar, pie).
@@ -126,20 +163,12 @@ export const useNamedQueryManagement = ({ url }) => {
         const errors = [];
 
         try {
-            // If no list was supplied (called from groups view before queries were loaded),
-            // fetch directly and use the returned value — don't rely on async state update.
+            // Use provided list or filter from all queries
             let list = queriesList;
             if (!list || list.length === 0) {
-                setQueriesLoading(true);
-                try {
-                    list = await apiFetchQueries(url, 0, 200, group);
-                    setQueries(list);
-                    setSelectedGroup(group);
-                } catch (err) {
-                    throw new Error(`Failed to load queries for group "${group}": ${err.message}`);
-                } finally {
-                    setQueriesLoading(false);
-                }
+                list = allQueries.filter(q =>
+                    (q.query_group || 'uncategorized') === group
+                );
             }
 
             if (!list || list.length === 0) throw new Error(`No queries found in group "${group}"`);
@@ -179,7 +208,7 @@ export const useNamedQueryManagement = ({ url }) => {
         } finally {
             setBulkExecuting(false);
         }
-    }, [url, apiFetchQueries, apiExecuteQuery]);
+    }, [url, allQueries, apiExecuteQuery]);
 
     const clearResults = useCallback(() => {
         setResultData(null);
@@ -189,11 +218,16 @@ export const useNamedQueryManagement = ({ url }) => {
 
     const resetAll = useCallback(() => {
         // Reset all state when connection is lost
+        setAllQueries([]);
+        setAllQueriesError("");
+        setAllQueriesFetched(false);
+        setAllQueriesLoading(false);
         setGroups([]);
         setGroupsError("");
-        setGroupsFetched(false);
+        setGroupsLoading(false);
         setQueries([]);
         setQueriesError("");
+        setQueriesLoading(false);
         setSelectedGroup(null);
         setResultData(null);
         setResultQueryMeta(null);
@@ -204,11 +238,16 @@ export const useNamedQueryManagement = ({ url }) => {
     }, []);
 
     return {
-        // Groups
+        // All queries
+        allQueries,
+        allQueriesLoading,
+        allQueriesError,
+        allQueriesFetched,
+        fetchAllNamedQueries,
+        // Groups (derived from all queries)
         groups,
         groupsLoading,
         groupsError,
-        groupsFetched,
         fetchGroups,
         // Queries
         selectedGroup,
