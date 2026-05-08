@@ -146,6 +146,7 @@ export const useNamedQueryManagement = ({ url }) => {
      *
      * Each result now includes `preferredDisplay` (from query.preferred_display) so
      * the UI can render each result with the correct view (table, line, bar, pie).
+     * Queries are executed in parallel using Promise.allSettled() with real-time progress tracking.
      */
     const executeAllQueriesInGroup = useCallback(async (group, queriesList = null) => {
         if (!url) throw new Error("No server URL - please connect first");
@@ -155,9 +156,6 @@ export const useNamedQueryManagement = ({ url }) => {
         setBulkExecutionResults([]);
         setResultData(null);
         setResultError("");
-
-        const results = [];
-        const errors = [];
 
         try {
             // Use provided list or filter from all queries
@@ -170,35 +168,76 @@ export const useNamedQueryManagement = ({ url }) => {
 
             if (!list || list.length === 0) throw new Error(`No queries found in group "${group}"`);
 
-            setBulkExecutionProgress({ current: 0, total: list.length });
+            const totalQueries = list.length;
+            setBulkExecutionProgress({ current: 0, total: totalQueries });
 
-            for (let i = 0; i < list.length; i++) {
-                const query = list[i];
-                setBulkExecutionProgress({ current: i + 1, total: list.length });
-
-                try {
-                    // Always attempt with empty params — optional params use server-side
-                    // defaults (e.g. `limit | default('20')`). Only skip if the API rejects.
-                    const data = await apiExecuteQuery(url, query.name, {});
-                    results.push({
-                        queryName: query.name,
-                        query_group: query.query_group,
-                        // Carry preferred_display so each result renders with the right view
-                        preferredDisplay: query.preferred_display || "table",
-                        success: true,
-                        data,
-                        rowCount: Array.isArray(data) ? data.length : 0,
+            // Create a wrapper function to track progress as each query completes
+            const trackedExecution = (query) => {
+                return apiExecuteQuery(url, query.name, {})
+                    .then(data => {
+                        // Increment progress on success
+                        setBulkExecutionProgress(prev => ({
+                            current: prev.current + 1,
+                            total: prev.total
+                        }));
+                        return {
+                            status: 'fulfilled',
+                            queryName: query.name,
+                            query_group: query.query_group,
+                            preferredDisplay: query.preferred_display || "table",
+                            data,
+                            rowCount: Array.isArray(data) ? data.length : 0,
+                        };
+                    })
+                    .catch(error => {
+                        // Increment progress even on failure
+                        setBulkExecutionProgress(prev => ({
+                            current: prev.current + 1,
+                            total: prev.total
+                        }));
+                        return {
+                            status: 'rejected',
+                            queryName: query.name,
+                            error: error?.message || "Execution failed",
+                        };
                     });
-                } catch (err) {
+            };
+
+            // Execute all queries in parallel with progress tracking
+            const executionPromises = list.map(trackedExecution);
+            const settledResults = await Promise.allSettled(executionPromises);
+
+            // Separate successful results from errors
+            const results = [];
+            const errors = [];
+
+            settledResults.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    if (result.value.status === 'fulfilled') {
+                        results.push({
+                            queryName: result.value.queryName,
+                            query_group: result.value.query_group,
+                            preferredDisplay: result.value.preferredDisplay,
+                            success: true,
+                            data: result.value.data,
+                            rowCount: result.value.rowCount,
+                        });
+                    } else {
+                        errors.push({
+                            queryName: result.value.queryName,
+                            error: result.value.error,
+                        });
+                    }
+                } else {
                     errors.push({
-                        queryName: query.name,
-                        error: err?.message || "Execution failed",
+                        queryName: result.reason?.queryName || "Unknown query",
+                        error: result.reason?.error || "Execution failed",
                     });
                 }
-            }
+            });
 
             setBulkExecutionResults(results);
-            return { results, errors, total: list.length };
+            return { results, errors, total: totalQueries };
         } catch (err) {
             const msg = err?.message || "Failed to execute queries";
             setResultError(msg);

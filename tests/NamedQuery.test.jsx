@@ -328,4 +328,166 @@ describe("Named Query Tab", () => {
             expect(screen.getByText(/connection required/i)).toBeInTheDocument();
         });
     });
+
+    it("executes all queries in a group in parallel and shows progress tracking", async () => {
+        axios.post.mockResolvedValueOnce(loginResponse("token-bulk"));
+        axios.mockImplementation(async (config) => {
+            // Login request
+            if (isMethod(config, "post") && config.url === `${SERVER_URL}/v1/login`) {
+                return loginResponse("token-bulk");
+            }
+            // Fetch named queries
+            if (isMethod(config, "get") && config.url.includes("/v1/named-query")) {
+                return {
+                    data: [
+                        {
+                            id: 1,
+                            name: "query1",
+                            description: "First query",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "test_group"
+                        },
+                        {
+                            id: 2,
+                            name: "query2",
+                            description: "Second query",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "test_group"
+                        },
+                        {
+                            id: 3,
+                            name: "query3",
+                            description: "Third query",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "test_group"
+                        }
+                    ],
+                    headers: { "content-type": "application/json" },
+                };
+            }
+            // Execute queries - simulate parallel execution
+            if (isMethod(config, "post") && config.url.includes("/v1/named-query")) {
+                // Simulate varying response times to prove parallel execution
+                const queryName = config.url.split('/').pop();
+                await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+                return mockExecuteQueryResponse();
+            }
+            throw new Error(`Unhandled request: ${config.method} ${config.url}`);
+        });
+
+        renderDashboard();
+        await connect();
+        await openNamedQueryTab();
+
+        // Wait for groups to load
+        expect(await screen.findByText("test_group")).toBeInTheDocument();
+
+        // Click Execute All for the group
+        await act(async () => {
+            const executeAllButtons = screen.getAllByRole("button", { name: "Execute All" });
+            fireEvent.click(executeAllButtons[0]);
+        });
+
+        // Verify loading indicator appears with progress tracking
+        await waitFor(() => {
+            expect(screen.getByText(/executing queries/i)).toBeInTheDocument();
+        });
+
+        // Verify progress counter shows during execution
+        await waitFor(() => {
+            const progressText = screen.queryByText(/\/\s*3/); // Should show "X / 3"
+            expect(progressText).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        // Wait for bulk execution to complete and results to appear
+        await waitFor(() => {
+            expect(screen.getByText(/bulk execution results/i)).toBeInTheDocument();
+        }, { timeout: 5000 });
+
+        // Verify success summary appears
+        expect(screen.getByText(/executed 3 queries successfully/i)).toBeInTheDocument();
+    });
+
+    it("handles parallel execution with mixed success and failure", async () => {
+        let executionCount = 0;
+
+        axios.post.mockResolvedValueOnce(loginResponse("token-mixed"));
+        axios.mockImplementation(async (config) => {
+            // Login request
+            if (isMethod(config, "post") && config.url === `${SERVER_URL}/v1/login`) {
+                return loginResponse("token-mixed");
+            }
+            // Fetch named queries
+            if (isMethod(config, "get") && config.url.includes("/v1/named-query")) {
+                return {
+                    data: [
+                        {
+                            id: 1,
+                            name: "successful_query",
+                            description: "This will succeed",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "mixed_group"
+                        },
+                        {
+                            id: 2,
+                            name: "failing_query",
+                            description: "This will fail",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "mixed_group"
+                        },
+                        {
+                            id: 3,
+                            name: "another_successful_query",
+                            description: "This will also succeed",
+                            parameterDescriptions: [],
+                            preferred_display: "table",
+                            query_group: "mixed_group"
+                        }
+                    ],
+                    headers: { "content-type": "application/json" },
+                };
+            }
+            // Execute queries - simulate mixed results
+            if (isMethod(config, "post") && config.url.includes("/v1/named-query")) {
+                executionCount++;
+                // Make the second execution fail (failing_query)
+                if (executionCount === 2) {
+                    throw new Error("Query execution failed: syntax error");
+                }
+                await new Promise(resolve => setTimeout(resolve, 50));
+                return mockExecuteQueryResponse();
+            }
+            throw new Error(`Unhandled request: ${config.method} ${config.url}`);
+        });
+
+        renderDashboard();
+        await connect();
+        await openNamedQueryTab();
+
+        // Wait for groups to load
+        expect(await screen.findByText("mixed_group")).toBeInTheDocument();
+
+        // Click Execute All for the group
+        await act(async () => {
+            const executeAllButtons = screen.getAllByRole("button", { name: "Execute All" });
+            fireEvent.click(executeAllButtons[0]);
+        });
+
+        // Wait for bulk execution to complete
+        await waitFor(() => {
+            expect(screen.getByText(/bulk execution results/i)).toBeInTheDocument();
+        }, { timeout: 5000 });
+        
+        // Verify mixed success summary appears
+        expect(screen.getByText(/executed 2 queries successfully, 1 failed/i)).toBeInTheDocument();
+
+        // Verify failed queries table appears
+        expect(screen.getByText(/failed queries \(1\)/i)).toBeInTheDocument();
+        expect(screen.getByText("failing_query")).toBeInTheDocument();
+    });
 });

@@ -24,7 +24,7 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
         selectedGroup, queries, queriesLoading, queriesError, fetchQueries, backToGroups,
         executeQuery, clearResults, executeAllQueriesInGroup,
         resultData, resultQueryMeta, resultLoading, resultError,
-        bulkExecuting,
+        bulkExecuting, bulkExecutionProgress,
     } = namedQuery;
 
     const [dialogQuery, setDialogQuery] = useState(null);
@@ -69,6 +69,12 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
             return;
         }
         isExecutingRef.current = true;
+
+        // Clear previous results and show loading
+        setShowBulkResults(false);
+        setBulkResultsData(null);
+        clearResults();
+
         try {
             const result = await executeAllQueriesInGroup(group, queriesList);
             setShowBulkResults(true);
@@ -188,8 +194,23 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                 />
             )}
 
+            {/* ── Single query loading ── */}
+            {resultLoading && !resultData && (
+                <div className="mt-8 bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
+                    <div className="bg-green-600 px-4 py-3 flex items-center gap-3">
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <h3 className="text-base font-semibold text-white">Executing Query</h3>
+                    </div>
+                    <div className="p-6">
+                        <p className="text-sm text-gray-500">
+                            Query is executing. Please wait for results.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* ── Single query result ── */}
-            {(resultData || resultLoading || resultError) && resultQueryMeta && (
+            {(resultData || resultError) && resultQueryMeta && (
                 <div className="mt-15">
                     <QueryResultDisplay
                         queryName={resultQueryMeta.name || "Query Results"}
@@ -206,6 +227,32 @@ const NamedQueryBrowser = ({ namedQuery, showPopup, isConnected }) => {
                         >
                             Clear Results
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Bulk execution loading ── */}
+            {bulkExecuting && !showBulkResults && (
+                <div className="mt-8 bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
+                    <div className="bg-blue-600 px-4 py-3 flex items-center gap-3">
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <h3 className="text-base font-semibold text-white">Executing Queries</h3>
+                    </div>
+                    <div className="p-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                    style={{ width: `${(bulkExecutionProgress.current / bulkExecutionProgress.total) * 100}%` }}
+                                ></div>
+                            </div>
+                            <span className="text-sm text-gray-600 font-medium">
+                                {bulkExecutionProgress.current} / {bulkExecutionProgress.total}
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                            All queries are executing. Please wait for results.
+                        </p>
                     </div>
                 </div>
             )}
