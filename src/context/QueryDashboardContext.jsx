@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useState, useEffect } from "react";
+import React, { createContext, useContext, useCallback, useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { tableFromIPC, compressionRegistry, CompressionType } from "apache-arrow";
 import Cookies from "js-cookie";
@@ -39,6 +39,7 @@ export const QueryDashboardProvider = ({ children }) => {
     // Session state
     const [connectionInfo, setConnectionInfo] = useState(null);
     const [jwtToken, setJwtToken] = useState(() => Cookies.get("jwtToken") || null);
+    const jwtTokenRef = useRef(Cookies.get("jwtToken") || null);
 
     // Load connection info from cookies on mount
     useEffect(() => {
@@ -84,6 +85,18 @@ export const QueryDashboardProvider = ({ children }) => {
         return tableData;
     };
 
+    const persistJwtToken = (token) => {
+        jwtTokenRef.current = token;
+        setJwtToken(token);
+
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        Cookies.set("jwtToken", token, {
+            path: "/",
+            secure: !isLocalhost,
+            sameSite: "lax"
+        });
+    };
+
     // --- Login ---
     const login = async (serverUrl, username, password, splitSize, claims) => {
         try {
@@ -94,16 +107,9 @@ export const QueryDashboardProvider = ({ children }) => {
             });
             const jwt = `${response.data.tokenType} ${response.data.accessToken}`;
 
-            // Save JWT in state (always works) and try cookie as backup
-            setJwtToken(jwt);
-
-            // Also try to save to cookie for persistence across refreshes
-            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            Cookies.set("jwtToken", jwt, {
-                path: "/",
-                secure: !isLocalhost,
-                sameSite: "lax"
-            });
+            // Update both ref and cookie synchronously so immediate follow-up requests
+            // cannot keep using a stale in-memory token from the previous session.
+            persistJwtToken(jwt);
 
             // Save connection info (without password for security in cookies)
             const connInfo = {
@@ -145,15 +151,9 @@ export const QueryDashboardProvider = ({ children }) => {
             // Optionally, validate the token by making a test query or using a validation endpoint
             // For now, we'll just store the token and connection info
 
-            // Save JWT in state and cookie
-            setJwtToken(formattedJwt);
-
-            const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-            Cookies.set("jwtToken", formattedJwt, {
-                path: "/",
-                secure: !isLocalhost,
-                sameSite: "lax"
-            });
+            // Update both ref and cookie synchronously so immediate follow-up requests
+            // cannot keep using a stale in-memory token from the previous session.
+            persistJwtToken(formattedJwt);
 
             // Save connection info (minimal, since we only have URL and JWT)
             const connInfo = {
@@ -179,6 +179,7 @@ export const QueryDashboardProvider = ({ children }) => {
     const logout = useCallback(() => {
         Cookies.remove("jwtToken", { path: "/" });
         Cookies.remove("connectionInfo", { path: "/" });
+        jwtTokenRef.current = null;
         setJwtToken(null);
         setConnectionInfo(null);
     }, []);
@@ -186,8 +187,8 @@ export const QueryDashboardProvider = ({ children }) => {
 
     // --- Helper: Check jwt and logout ---
     const requireJwtOrLogout = (jwt) => {
-        const cookieToken = Cookies.get("jwtToken");
-        const token = jwtToken || cookieToken || jwt;
+        const cookieToken = Cookies.get("jwtToken") || null;
+        const token = cookieToken || jwtTokenRef.current || jwtToken || jwt;
         if (!token) {
             logout();
             throw new Error("Session expired. Please login again.");
@@ -400,6 +401,247 @@ export const QueryDashboardProvider = ({ children }) => {
         }
     }, []);
 
+    // --- Named Query Support ---
+
+    /**
+     * Forward named query requests to DazzleDuck server
+     * Reuses existing authentication, error handling, and timeout logic
+     */
+    const forwardNamedQueryRequest = async (serverUrl, method, endpoint, data = null) => {
+        const cleanUrl = serverUrl.trim();
+        if (!cleanUrl || !endpoint) {
+            throw new Error("Server URL and endpoint are required.");
+        }
+
+        const token = requireJwtOrLogout();
+
+        const headers = {
+            "Content-Type": "application/json",
+            Accept: "application/json, application/vnd.apache.arrow.stream",
+            Authorization: token,
+        };
+
+        // Build full URL
+        const fullUrl = cleanUrl.endsWith(endpoint)
+            ? cleanUrl
+            : cleanUrl.replace(/\/+$/, "") + endpoint;
+
+        try {
+            const config = {
+                method,
+                url: fullUrl,
+                headers,
+                timeout: FIVE_MINUTES_MS,
+                maxContentLength: 50 * 1024 * 1024,
+            };
+
+            // Add request body for POST/PUT
+            if (data && ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
+                config.data = data;
+                // Set appropriate response type based on Accept header
+                if (headers.Accept.includes('application/vnd.apache.arrow.stream')) {
+                    config.responseType = 'arraybuffer';
+                }
+            }
+
+            const response = await axios(config);
+
+            const contentType = (response.headers["content-type"] || "").toLowerCase();
+
+            // Handle arraybuffer responses (Arrow data)
+            if (response.data instanceof ArrayBuffer) {
+                const buffer = new Uint8Array(response.data);
+                const base64 = btoa(String.fromCharCode(...buffer));
+                return { type: "binary", contentType, base64 };
+            }
+
+            // Handle JSON responses
+            return { type: "json", data: response.data };
+        } catch (err) {
+            // Handle axios errors with response data
+            if (err.response && err.response.data) {
+                const responseData = err.response.data;
+
+                if (responseData instanceof ArrayBuffer) {
+                    const decoder = new TextDecoder('utf-8');
+                    const errorText = decoder.decode(responseData);
+                    throw new Error(errorText);
+                } else if (typeof responseData === 'string') {
+                    throw new Error(responseData);
+                } else if (responseData && typeof responseData === 'object') {
+                    const errorMsg = responseData.message || responseData.error || JSON.stringify(responseData);
+                    throw new Error(errorMsg);
+                }
+            }
+            throw err;
+        }
+    };
+
+    /**
+     * Fetch all named queries with pagination
+     * GET /v1/named-query?offset={offset}&limit={limit}
+     * Note: Group filtering is now done client-side
+     */
+    const fetchNamedQueries = useCallback(async (serverUrl, offset = 0, limit = 20, group = null) => {
+        if (!serverUrl?.trim()) {
+            throw new Error("Server URL is required");
+        }
+
+        const cleanUrl = serverUrl.trim();
+        const endpoint = `/v1/named-query`;
+        const queryParams = `?offset=${offset}&limit=${Math.min(limit, 1000)}`;
+
+        // Note: group parameter is kept for backward compatibility but no longer used
+        // Groups are now derived from query_group field in the response
+
+        try {
+            const result = await forwardNamedQueryRequest(cleanUrl, 'GET', endpoint + queryParams);
+
+            if (result.type === "json" && Array.isArray(result.data)) {
+                // Transform parameterDescriptions from array format to object format for backward compatibility
+                const transformedData = result.data.map(query => {
+                    if (Array.isArray(query.parameterDescriptions)) {
+                        const paramObj = {};
+                        query.parameterDescriptions.forEach(param => {
+                            paramObj[param.key] = param.value;
+                        });
+                        return { ...query, parameterDescriptions: paramObj };
+                    }
+                    return query;
+                });
+                return transformedData;
+            }
+
+            return [];
+        } catch (err) {
+            throw new Error(`Failed to fetch named queries: ${err.message}`);
+        }
+    }, []);
+
+    /**
+     * Get a specific named query by name
+     * GET /v1/named-query/{name}
+     */
+    const getNamedQuery = useCallback(async (serverUrl, queryName) => {
+        if (!serverUrl?.trim()) {
+            throw new Error("Server URL is required");
+        }
+
+        if (!queryName?.trim()) {
+            throw new Error("Query name is required");
+        }
+
+        const cleanUrl = serverUrl.trim();
+        const endpoint = `/v1/named-query/${encodeURIComponent(queryName.trim())}`;
+
+        try {
+            const result = await forwardNamedQueryRequest(cleanUrl, 'GET', endpoint);
+
+            if (result.type === "json") {
+                // Transform parameterDescriptions from array format to object format
+                let queryData = result.data;
+                if (Array.isArray(queryData.parameterDescriptions)) {
+                    const paramObj = {};
+                    queryData.parameterDescriptions.forEach(param => {
+                        paramObj[param.key] = param.value;
+                    });
+                    queryData = { ...queryData, parameterDescriptions: paramObj };
+                }
+                return queryData;
+            }
+
+            throw new Error("Invalid response format");
+        } catch (err) {
+            const errorMsg = err.message || "Failed to fetch named query";
+
+            throw new Error(errorMsg);
+        }
+    }, []);
+
+    /**
+     * Execute a named query with parameters
+     * POST /v1/named-query
+     */
+    const executeNamedQuery = useCallback(async (serverUrl, queryName, parameters = {}) => {
+        if (!serverUrl?.trim()) {
+            throw new Error("Server URL is required");
+        }
+
+        if (!queryName?.trim()) {
+            throw new Error("Query name is required");
+        }
+
+        const cleanUrl = serverUrl.trim();
+        const endpoint = `/v1/named-query`;
+
+        // Prepare request body
+        const requestBody = {
+            name: queryName.trim(),
+            parameters: parameters,
+        };
+
+        try {
+            const token = requireJwtOrLogout();
+
+            const headers = {
+                "Content-Type": "application/json",
+                "Authorization": token,
+            };
+
+            const fullUrl = cleanUrl.endsWith(endpoint)
+                ? cleanUrl
+                : cleanUrl.replace(/\/+$/, "") + endpoint;
+
+            const config = {
+                method: 'POST',
+                url: fullUrl,
+                headers,
+                data: requestBody,
+                timeout: FIVE_MINUTES_MS,
+                maxContentLength: 50 * 1024 * 1024,
+                responseType: 'arraybuffer',
+            };
+
+            const response = await axios(config);
+
+            // Handle Arrow format (backend default)
+            if (response.data instanceof ArrayBuffer) {
+                const buffer = new Uint8Array(response.data);
+                const base64 = btoa(String.fromCharCode(...buffer));
+                return parseResponseData({ binary: true, base64 });
+            }
+
+            return [];
+        } catch (err) {
+            let errorMsg = err.message || "Failed to execute named query";
+
+            // Handle specific HTTP errors
+            if (err.response?.status === 404) {
+                errorMsg = `Named query '${queryName}' not found`;
+            } else if (err.response?.status === 400) {
+                errorMsg = `Parameter validation failed for query '${queryName}'`;
+            } else if (err.response?.status === 401) {
+                errorMsg = "Unauthorized: Please login again";
+            }
+
+            // Handle axios errors with response data
+            if (err.response && err.response.data) {
+                const responseData = err.response.data;
+
+                if (responseData instanceof ArrayBuffer) {
+                    const decoder = new TextDecoder('utf-8');
+                    errorMsg = decoder.decode(responseData);
+                } else if (typeof responseData === 'string') {
+                    errorMsg = responseData;
+                } else if (responseData && typeof responseData === 'object') {
+                    errorMsg = responseData.message || responseData.error || errorMsg;
+                }
+            }
+
+            throw new Error(errorMsg);
+        }
+    }, []);
+
     // --- Save Session ---
     const saveSession = useCallback((currentQueries = []) => {
         if (!connectionInfo) {
@@ -512,6 +754,9 @@ export const QueryDashboardProvider = ({ children }) => {
                 loadSession,
                 loadSessionFromUrl,
                 restoreSession,
+                fetchNamedQueries,
+                getNamedQuery,
+                executeNamedQuery,
                 connectionInfo,
             }}>
             {children}

@@ -1,14 +1,17 @@
 import React, { useState } from "react";
 import { HiOutlineArrowUp, HiOutlineArrowDown } from "react-icons/hi";
+import { BsSearch } from "react-icons/bs";
 import "../App.css";
 import { useQueryDashboard } from "../context/QueryDashboardContext";
 import { useQueryManagement } from "../hooks/useQueryManagement";
 import { useConnectionForm } from "../hooks/useConnectionForm";
 import { useSessionManagement } from "../hooks/useSessionManagement";
+import { useNamedQueryManagement } from "../hooks/useNamedQueryManagement";
 import ConnectionPanel from "../components/dashboardcomponents/ConnectionPanel";
 import QueryRow from "../components/dashboardcomponents/QueryRow";
 import PopupMessage from "../components/utils/PopupMessage";
-import SearchTable from "../components/dashboardcomponents/SearchTable";
+import DataTable from "../components/dashboardcomponents/DataTable";
+import NamedQueryBrowser from "../components/dashboardcomponents/namedquery/NamedQueryBrowser";
 
 const QueryDashboard = () => {
     const {
@@ -24,26 +27,20 @@ const QueryDashboard = () => {
         connectionInfo,
     } = useQueryDashboard();
 
-    const [activeTab, setActiveTab] = useState("analytics"); // "analytics" | "search"
+    const [activeTab, setActiveTab] = useState("analytics"); // "analytics" | "search" | "named"
 
-    const [popup, setPopup] = useState({
-        message: "",
-        type: "",
-        visible: false,
-    });
-
-    const showPopup = (message, type = "success") => {
-        setPopup({
-            message,
-            type,
-            visible: true,
-        });
-    };
+    const [popup, setPopup] = useState({ message: "", type: "", visible: false });
+    const showPopup = (message, type = "success") => setPopup({ message, type, visible: true });
 
     const [showConnection, setShowConnection] = useState(true);
 
     // Connection form management
     const connectionForm = useConnectionForm(login, loginWithJwt, logout, connectionInfo);
+
+    // Named query management
+    const namedQuery = useNamedQueryManagement({
+        url: connectionForm.connection?.url,
+    });
 
     // Query management
     const queryManagement = useQueryManagement(
@@ -65,19 +62,14 @@ const QueryDashboard = () => {
         showPopup
     );
 
-    // Handle logout with query reset
     const handleLogout = () => {
         connectionForm.handleLogout();
         queryManagement.resetRows();
+        namedQuery.resetAll();
     };
 
-    const scrollToTop = () => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const scrollToBottom = () => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    };
+    const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+    const scrollToBottom = () => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
 
     return (
         <div className="relative min-h-screen bg-linear-to-br from-gray-50 to-gray-200 p-10 space-y-10">
@@ -115,24 +107,28 @@ const QueryDashboard = () => {
 
             {/* Tabs */}
             <div className="flex gap-4 border-b border-gray-400 pb-2 ml-5 overflow-hidden">
-                <button
-                    onClick={() => setActiveTab("analytics")}
-                    className={` px-4 pt-2 pb-3 font-semibold rounded-t-md border border-b-0 cursor-pointer transition-all duration-300 transform ${activeTab === "analytics" ? "bg-gray-300 border-gray-600 translate-y-4" : "bg-gray-200 border-gray-200 text-gray-600 hover:text-gray-900 translate-y-3"}`}
-                >
-                    Analytics
-                </button>
-
-                <button
-                    onClick={() => setActiveTab("search")}
-                    className={` px-4 pt-2 pb-3 font-semibold rounded-t-md border border-b-0 transition-all duration-300 transform cursor-pointer ${activeTab === "search" ? "bg-gray-300 border-gray-600 translate-y-4" : "bg-gray-200 border-gray-200 text-gray-600 hover:text-gray-900 translate-y-3"}`}
-                >
-                    Search
-                </button>
+                {[
+                    { id: "analytics", label: "Analytics" },
+                    { id: "search",    label: "Search" },
+                    { id: "named",     label: "Named Queries" },
+                ].map(({ id, label }) => (
+                    <button
+                        key={id}
+                        onClick={() => setActiveTab(id)}
+                        className={`px-4 pt-2 pb-3 font-semibold rounded-t-md border border-b-0 cursor-pointer transition-all duration-300 transform ${
+                            activeTab === id
+                                ? "bg-gray-300 border-gray-600 translate-y-4"
+                                : "bg-gray-200 border-gray-200 text-gray-600 hover:text-gray-900 translate-y-3"
+                        }`}
+                    >
+                        {label}
+                    </button>
+                ))}
             </div>
 
+            {/* Analytics Tab */}
             {activeTab === "analytics" && (
                 <>
-                    {/* Query Rows */}
                     {queryManagement.rows.map((row) => (
                         <QueryRow
                             key={row.id}
@@ -150,7 +146,6 @@ const QueryDashboard = () => {
                         />
                     ))}
 
-                    {/* Buttons */}
                     <div className="flex justify-evenly mt-10 gap-5">
                         <button
                             onClick={queryManagement.addRow}
@@ -158,15 +153,13 @@ const QueryDashboard = () => {
                         >
                             Add New Query Row
                         </button>
-
                         <div className="flex gap-5">
                             <button
                                 onClick={queryManagement.toggleAllRows}
                                 className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md cursor-pointer"
                             >
-                                {queryManagement.rows.every(row => !row.showPanel) ? "Show Queries" : "Hide Queries"}
+                                {queryManagement.rows.every((row) => !row.showPanel) ? "Show Queries" : "Hide Queries"}
                             </button>
-
                             <button
                                 onClick={queryManagement.runAllQueries}
                                 disabled={!connectionForm.isConnected || queryManagement.isRunningAll}
@@ -179,17 +172,43 @@ const QueryDashboard = () => {
                 </>
             )}
 
+            {/* Search Tab */}
             {activeTab === "search" && (
-                <div className="">
-                    <SearchTable
-                        title="Search Results"
-                        data={queryManagement.searchData}
-                        loading={queryManagement.searchLoading}
-                        searchQuery={queryManagement.searchQuery}
-                        setSearchQuery={queryManagement.setSearchQuery}
-                        onSearch={queryManagement.runSearchQuery}
-                        error={queryManagement.searchError}
-                    />
+                <DataTable
+                    title="Search Results"
+                    data={queryManagement.searchData}
+                    loading={queryManagement.searchLoading}
+                    error={queryManagement.searchError}
+                    headerSlot={
+                        <div className="bg-white border-b border-gray-300 shadow-md p-3 sm:p-4 md:p-6 flex flex-col items-center gap-3">
+                            <div className="flex w-full sm:w-[90%] md:w-[80%] border border-gray-400 rounded-md p-1 font-mono shadow-sm">
+                                <input
+                                    type="text"
+                                    placeholder="Search data with SQL query..."
+                                    value={queryManagement.searchQuery}
+                                    onChange={(e) => queryManagement.setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && queryManagement.runSearchQuery(queryManagement.searchQuery)}
+                                    className="flex-1 p-1 sm:p-2 outline-none px-2 sm:px-4 py-1 sm:py-2 text-xs sm:text-sm"
+                                />
+                                <button
+                                    onClick={() => queryManagement.runSearchQuery(queryManagement.searchQuery)}
+                                    className="px-3 sm:px-5 py-1 sm:py-2 border-l border-gray-400 hover:bg-gray-100"
+                                >
+                                    <BsSearch className="text-base sm:text-xl" />
+                                </button>
+                            </div>
+                        </div>
+                    }
+                />
+            )}
+
+            {/* Named Queries Tab */}
+            {activeTab === "named" && (
+                <div className="bg-white rounded-md shadow-xl mx-2 sm:mx-4 md:mx-10">
+                    <div className="bg-gray-300 p-2 sm:p-3 flex items-center rounded-t-md shadow-md">
+                        <h2 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-wide">Named Queries</h2>
+                    </div>
+                    <NamedQueryBrowser namedQuery={namedQuery} showPopup={showPopup} isConnected={connectionForm.isConnected} />
                 </div>
             )}
 
@@ -215,9 +234,7 @@ const QueryDashboard = () => {
                 message={popup.message}
                 type={popup.type}
                 visible={popup.visible}
-                onClose={() =>
-                    setPopup({ message: "", type: "", visible: false })
-                }
+                onClose={() => setPopup({ message: "", type: "", visible: false })}
             />
         </div>
     );

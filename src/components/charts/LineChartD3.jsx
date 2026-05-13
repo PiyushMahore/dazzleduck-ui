@@ -85,11 +85,13 @@ export default function LineChartD3({ data, design }) {
         .attr("stroke-width", 2)
         .attr("d", line);
 
-      chartGroup.selectAll(`.dot-${dataset}`)
+      const sanitizedDataset = String(dataset).replace(/[^a-zA-Z0-9-_]/g, '_');
+
+      chartGroup.selectAll(`.dot-${sanitizedDataset}`)
         .data(sorted)
         .enter()
         .append("circle")
-        .attr("class", `dot-${dataset}`)
+        .attr("class", `dot-${sanitizedDataset}`)
         .attr("cx", d => xScale(d[xField]))
         .attr("cy", d => yScale(d[yField]))
         .attr("r", 4)
